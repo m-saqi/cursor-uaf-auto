@@ -5861,7 +5861,14 @@ function init() {
         const profileCountStat = document.getElementById('profileCountStat');
         const lastBackupStat = document.getElementById('lastBackupStat');
 
-        const profileKeys = Object.keys(profiles);
+        // --- UPDATED: Sort profiles by lastModified date (Newest on Top) ---
+        const profileKeys = Object.keys(profiles).sort((a, b) => {
+            const dateA = new Date(profiles[a].lastModified || 0);
+            const dateB = new Date(profiles[b].lastModified || 0);
+            return dateB - dateA; // Descending order
+        });
+        // --- END UPDATE ---
+
         profileCountStat.textContent = `${profileKeys.length} Profile${profileKeys.length !== 1 ? 's' : ''}`;
 
         const backupInfo = getBackupInfo();
@@ -8846,5 +8853,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
 </body>
 </html>
+
 
 
