@@ -6688,41 +6688,59 @@ function initTheme() {
 
 
         // Now calculate totals
+        // Now calculate totals
         Object.values(data.semesters).forEach(semester => {
+            // 1. Global Counters (Strict: No repeats, no deleted) - For Final CGPA
             semester.totalQualityPoints = 0;
             semester.totalCreditHours = 0;
             semester.totalMarksObtained = 0;
             semester.totalMaxMarks = 0;
+
+            // 2. Semester Counters (Inclusive: Includes repeats/deleted repeats) - For Card Display
+            let semActualQP = 0;
+            let semActualCH = 0;
+            let semActualObtained = 0;
+            let semActualMax = 0;
+
             semester.courses.forEach(course => {
+                
+                // Common Max Marks Logic
+                let maxMarks;
+                if ((course.grade || '').trim().toUpperCase() === 'P') {
+                    if (course.creditHours === 1) maxMarks = 100;
+                    else maxMarks = course.marks;
+                } else {
+                     maxMarks = { 10: 200, 9: 180, 8: 160, 7: 140, 6: 120, 5: 100, 4: 80, 3: 60, 2: 40, 1: 20 }[course.creditHours] || 0;
+                }
+
+                // A. Logic for Global CGPA (UNCHANGED: Strictly excludes repeats/deleted)
                 if (!course.isExtraEnrolled && !course.isDeleted) {
                     semester.totalQualityPoints += course.qualityPoints;
                     semester.totalCreditHours += course.creditHours;
                     semester.totalMarksObtained += course.marks;
-
-                    let maxMarks;
-                    if ((course.grade || '').trim().toUpperCase() === 'P') {
-                        // Assume 'P' grade courses with 1CH have 100 max marks, as requested
-                        if (course.creditHours === 1) {
-                            maxMarks = 100;
-                        } else {
-                            // Fallback for 'P' grade on other CH (if it ever happens)
-                            // We assume the total marks obtained are the max marks for percentage
-                            maxMarks = course.marks; 
-                        }
-                    } else {
-                         maxMarks = { 10: 200, 9: 180, 8: 160, 7: 140, 6: 120, 5: 100, 4: 80, 3: 60, 2: 40, 1: 20 }[course.creditHours] || 0;
-                    }
-
                     semester.totalMaxMarks += maxMarks;
 
+                    // Add to Global Totals
                     totalQualityPoints += course.qualityPoints;
                     totalCreditHours += course.creditHours;
                     totalMarksObtained += course.marks;
                     totalMaxMarks += maxMarks;
                 }
+
+                // B. Logic for Semester GPA (UPDATED: Includes Repeats despite deletion)
+                // We count the course if it is NOT deleted, OR if it IS a repeated course (isExtraEnrolled).
+                // This ensures "Actual GPA" shows the reality of that semester, even if the user tries to hide the repeat.
+                if (!course.isDeleted || course.isExtraEnrolled) {
+                    semActualQP += course.qualityPoints;
+                    semActualCH += course.creditHours;
+                    semActualObtained += course.marks;
+                    semActualMax += maxMarks;
+                }
             });
-            semester.gpa = semester.totalCreditHours > 0 ? (semester.totalQualityPoints / semester.totalCreditHours) : 0;
-            semester.percentage = semester.totalMaxMarks > 0 ? (semester.totalMarksObtained / semester.totalMaxMarks * 100) : 0;
+
+            // Set the Semester Card display values using the ACTUAL counters
+            semester.gpa = semActualCH > 0 ? (semActualQP / semActualCH) : 0;
+            semester.percentage = semActualMax > 0 ? (semActualObtained / semActualMax * 100) : 0;
         });
 
         const cgpa = totalCreditHours > 0 ? (totalQualityPoints / totalCreditHours) : 0;
@@ -8853,6 +8871,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 </body>
 </html>
+
 
 
 
