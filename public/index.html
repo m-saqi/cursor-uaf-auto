@@ -6687,23 +6687,25 @@ function initTheme() {
         });
 
 
-        // Now calculate totals
-        // Now calculate totals
+        // Now calculate totals// Now calculate totals
         Object.values(data.semesters).forEach(semester => {
-            // 1. Global Counters (Strict: No repeats, no deleted) - For Final CGPA
+            // 1. Global Counters (Strict: Excludes repeats) - For Final CGPA
             semester.totalQualityPoints = 0;
             semester.totalCreditHours = 0;
             semester.totalMarksObtained = 0;
             semester.totalMaxMarks = 0;
 
-            // 2. Semester Counters (Inclusive: Includes repeats/deleted repeats) - For Card Display
+            // 2. Semester Counters (Inclusive: Includes repeats) - For Card Display
             let semActualQP = 0;
             let semActualCH = 0;
             let semActualObtained = 0;
             let semActualMax = 0;
 
             semester.courses.forEach(course => {
-                
+                // RULE 1: Real-time Manipulation
+                // If the user deleted the course, skip it entirely for BOTH calculations.
+                if (course.isDeleted) return; 
+
                 // Common Max Marks Logic
                 let maxMarks;
                 if ((course.grade || '').trim().toUpperCase() === 'P') {
@@ -6713,8 +6715,16 @@ function initTheme() {
                      maxMarks = { 10: 200, 9: 180, 8: 160, 7: 140, 6: 120, 5: 100, 4: 80, 3: 60, 2: 40, 1: 20 }[course.creditHours] || 0;
                 }
 
-                // A. Logic for Global CGPA (UNCHANGED: Strictly excludes repeats/deleted)
-                if (!course.isExtraEnrolled && !course.isDeleted) {
+                // RULE 2: Semester Card Display (Includes Repeats/Extra Enrolled)
+                // Since we passed the delete check above, we include EVERYTHING here.
+                semActualQP += course.qualityPoints;
+                semActualCH += course.creditHours;
+                semActualObtained += course.marks;
+                semActualMax += maxMarks;
+
+                // RULE 3: Global CGPA Calculation (Strictly Excludes Repeats)
+                // Only add to the official global totals if it is NOT an extra enrollment.
+                if (!course.isExtraEnrolled) {
                     semester.totalQualityPoints += course.qualityPoints;
                     semester.totalCreditHours += course.creditHours;
                     semester.totalMarksObtained += course.marks;
@@ -6726,19 +6736,9 @@ function initTheme() {
                     totalMarksObtained += course.marks;
                     totalMaxMarks += maxMarks;
                 }
-
-                // B. Logic for Semester GPA (UPDATED: Includes Repeats despite deletion)
-                // We count the course if it is NOT deleted, OR if it IS a repeated course (isExtraEnrolled).
-                // This ensures "Actual GPA" shows the reality of that semester, even if the user tries to hide the repeat.
-                if (!course.isDeleted || course.isExtraEnrolled) {
-                    semActualQP += course.qualityPoints;
-                    semActualCH += course.creditHours;
-                    semActualObtained += course.marks;
-                    semActualMax += maxMarks;
-                }
             });
 
-            // Set the Semester Card display values using the ACTUAL counters
+            // Set the Semester Card display values using the ACTUAL (inclusive) counters
             semester.gpa = semActualCH > 0 ? (semActualQP / semActualCH) : 0;
             semester.percentage = semActualMax > 0 ? (semActualObtained / semActualMax * 100) : 0;
         });
@@ -8871,6 +8871,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 </body>
 </html>
+
 
 
 
