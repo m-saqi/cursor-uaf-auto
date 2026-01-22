@@ -1,1420 +1,759 @@
-<!DOCTYPE html>
-<html lang="en" data-theme="light">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0" />
-  <title>UAF CGPA Calculator - Ultimate Edition</title>
-  <meta name="description" content="Professional UAF CGPA Calculator with LMS & Attendance integration." />
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Calculator, 
+  TrendingUp, 
+  Users, 
+  Settings, 
+  Download, 
+  Plus, 
+  Trash2, 
+  Save, 
+  Wifi, 
+  WifiOff,
+  ChevronDown,
+  ChevronUp,
+  GraduationCap,
+  Menu,
+  X,
+  BookOpen,
+  PieChart
+} from 'lucide-react';
 
-  <!-- Fonts & Icons -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://cdnjs.cloudflare.com">
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" rel="stylesheet" />
+// --- Constants & Utilities ---
+
+const API_BASE_URL = "https://your-api-domain.com/api"; // Placeholder for user's API
+
+// Official UAF Grading Tables
+const GRADING_SCALES = {
+  modern: [ // HEC / New Scheme (50% Pass)
+    { min: 85, max: 100, gp: 4.00, grade: 'A' },
+    { min: 80, max: 84.99, gp: 3.70, grade: 'A-' },
+    { min: 75, max: 79.99, gp: 3.30, grade: 'B+' },
+    { min: 70, max: 74.99, gp: 3.00, grade: 'B' },
+    { min: 65, max: 69.99, gp: 2.70, grade: 'B-' },
+    { min: 61, max: 64.99, gp: 2.30, grade: 'C+' },
+    { min: 58, max: 60.99, gp: 2.00, grade: 'C' },
+    { min: 55, max: 57.99, gp: 1.70, grade: 'C-' },
+    { min: 50, max: 54.99, gp: 1.00, grade: 'D' },
+    { min: 0, max: 49.99, gp: 0.00, grade: 'F' }
+  ],
+  legacy: [ // Old Scheme (40% Pass - Progressive)
+    { min: 80, max: 100, gp: 4.00, grade: 'A' },
+    { min: 65, max: 79, gp: 3.00, grade: 'B' }, // Often calculated progressively
+    { min: 50, max: 64, gp: 2.00, grade: 'C' },
+    { min: 40, max: 49, gp: 1.00, grade: 'D' },
+    { min: 0, max: 39, gp: 0.00, grade: 'F' }
+  ]
+};
+
+const calculateGP = (marks, totalMarks, scaleType = 'modern') => {
+  if (!marks || !totalMarks) return 0;
+  const percentage = (parseFloat(marks) / parseFloat(totalMarks)) * 100;
+  const scale = GRADING_SCALES[scaleType] || GRADING_SCALES.modern;
   
-  <!-- Bootstrap 5 CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+  const gradeObj = scale.find(r => percentage >= r.min && percentage <= r.max);
+  return gradeObj ? gradeObj.gp : 0;
+};
 
-  <!-- Libraries -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js" defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+const calculateGradeLetter = (marks, totalMarks, scaleType = 'modern') => {
+  if (!marks || !totalMarks) return '-';
+  const percentage = (parseFloat(marks) / parseFloat(totalMarks)) * 100;
+  const scale = GRADING_SCALES[scaleType] || GRADING_SCALES.modern;
+  const gradeObj = scale.find(r => percentage >= r.min && percentage <= r.max);
+  return gradeObj ? gradeObj.grade : 'F';
+};
 
-  <style>
-    :root {
-      --brand: #6c5ce7;
-      --brand-dark: #5849be;
-      --accent: #00cec9;
-      --bg-body: #f4f7fc;
-      --bg-card: #ffffff;
-      --text-main: #2d3436;
-      --text-muted: #636e72;
-      --border-color: rgba(0,0,0,0.08);
-      --glass-bg: rgba(255, 255, 255, 0.85);
-      --glass-border: rgba(255, 255, 255, 0.5);
-      --shadow-sm: 0 4px 12px rgba(0,0,0,0.05);
-      --shadow-lg: 0 10px 30px rgba(108, 92, 231, 0.15);
-      --radius: 1.25rem;
-      --status-online: #00b894;
-      --status-offline: #ff7675;
-      --status-checking: #fab1a0;
-    }
+const generateId = () => Math.random().toString(36).substr(2, 9);
 
-    [data-theme="dark"] {
-      --brand: #a29bfe;
-      --brand-dark: #6c5ce7;
-      --accent: #81ecec;
-      --bg-body: #0f111a;
-      --bg-card: #1e2130;
-      --text-main: #dfe6e9;
-      --text-muted: #b2bec3;
-      --border-color: rgba(255,255,255,0.1);
-      --glass-bg: rgba(30, 33, 48, 0.85);
-      --glass-border: rgba(255, 255, 255, 0.05);
-      --shadow-sm: 0 4px 12px rgba(0,0,0,0.2);
-      --shadow-lg: 0 10px 30px rgba(0,0,0,0.3);
-    }
+// --- Components ---
 
-    body {
-      font-family: 'Outfit', sans-serif;
-      background-color: var(--bg-body);
-      color: var(--text-main);
-      transition: background-color 0.3s ease;
-      padding-bottom: 80px; /* Space for bottom nav on mobile */
-    }
-
-    /* --- Utilities --- */
-    .glass-card {
-      background: var(--glass-bg);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      border: 1px solid var(--glass-border);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow-sm);
-    }
-
-    .btn-brand {
-      background: linear-gradient(135deg, var(--brand), var(--brand-dark));
-      color: white;
-      border: none;
-      border-radius: 12px;
-      padding: 10px 20px;
-      font-weight: 600;
-      box-shadow: 0 4px 15px rgba(108, 92, 231, 0.3);
-      transition: transform 0.2s;
-    }
-    .btn-brand:hover { transform: translateY(-2px); color: white; }
-    .btn-brand:active { transform: scale(0.98); }
-
-    .btn-icon {
-      width: 40px; height: 40px;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      background: var(--bg-card);
-      color: var(--text-muted);
-      border: 1px solid var(--border-color);
-      transition: all 0.2s;
-    }
-    .btn-icon:hover { background: var(--brand); color: white; border-color: var(--brand); }
-
-    /* --- Header --- */
-    .app-header {
-      position: sticky; top: 0; z-index: 1000;
-      padding: 15px 0;
-      background: rgba(var(--bg-body-rgb), 0.9);
-      backdrop-filter: blur(10px);
-    }
-    .brand-logo { font-weight: 800; font-size: 1.5rem; background: linear-gradient(45deg, var(--brand), var(--accent)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-
-    /* --- Input Area --- */
-    .search-wrapper {
-      position: relative;
-      margin-bottom: 2rem;
-    }
-    .search-input {
-      width: 100%;
-      padding: 1.2rem 1.5rem;
-      padding-right: 120px;
-      border-radius: 20px;
-      border: 2px solid transparent;
-      background: var(--bg-card);
-      font-size: 1.1rem;
-      box-shadow: var(--shadow-sm);
-      color: var(--text-main);
-      transition: all 0.3s;
-    }
-    .search-input:focus { outline: none; border-color: var(--brand); box-shadow: var(--shadow-lg); }
-    .search-btn {
-      position: absolute; right: 8px; top: 8px; bottom: 8px;
-      border-radius: 14px;
-    }
-
-    /* --- Status Pill --- */
-    .status-pill {
-      display: inline-flex; align-items: center; gap: 1rem;
-      padding: 0.5rem 1rem;
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: 50px;
-      font-size: 0.85rem;
-      font-weight: 600;
-      box-shadow: var(--shadow-sm);
-      margin-bottom: 2rem;
-    }
-    .status-item { display: flex; align-items: center; gap: 0.4rem; }
-    .status-dot {
-      width: 10px; height: 10px; border-radius: 50%;
-      background-color: var(--status-checking);
-      position: relative;
-      transition: background-color 0.3s ease;
-    }
-    .status-dot.online { background-color: var(--status-online); box-shadow: 0 0 8px rgba(0, 184, 148, 0.4); }
-    .status-dot.offline { background-color: var(--status-offline); box-shadow: 0 0 8px rgba(255, 118, 117, 0.4); }
-    .status-dot.online::after {
-      content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
-      border-radius: 50%; border: 1px solid var(--status-online);
-      animation: pulse 1.5s infinite;
-    }
-    @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }
-
-    /* --- Profile Cards --- */
-    .profile-card {
-      background: var(--bg-card);
-      border-radius: 16px;
-      padding: 1.2rem;
-      margin-bottom: 1rem;
-      border: 1px solid var(--border-color);
-      cursor: pointer;
-      transition: all 0.2s;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .profile-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-sm); border-color: var(--brand); }
-    .profile-avatar {
-      width: 50px; height: 50px; border-radius: 12px;
-      background: linear-gradient(135deg, var(--brand), var(--accent));
-      color: white; display: flex; align-items: center; justify-content: center;
-      font-weight: 700; font-size: 1.2rem; margin-right: 1rem;
-    }
-
-    /* --- Result View --- */
-    .gpa-circle {
-      width: 160px; height: 160px; margin: 0 auto; position: relative;
-    }
-    .gpa-circle svg { width: 100%; height: 100%; transform: rotate(-90deg); }
-    .gpa-circle circle { fill: none; stroke-width: 8; stroke-linecap: round; }
-    .gpa-circle-bg { stroke: var(--border-color); }
-    .gpa-circle-val { stroke: var(--brand); transition: stroke-dasharray 1.5s ease; }
-    .gpa-text {
-      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-      text-align: center;
-    }
-
-    /* --- Semester List --- */
-    .semester-item {
-      background: var(--bg-card);
-      border-radius: 16px;
-      margin-bottom: 1rem;
-      overflow: hidden;
-      border: 1px solid var(--border-color);
-    }
-    .semester-header {
-      padding: 1rem 1.2rem;
-      background: rgba(108, 92, 231, 0.05);
-      display: flex; justify-content: space-between; align-items: center;
-      border-bottom: 1px solid var(--border-color);
-    }
-    [data-theme="dark"] .semester-header { background: rgba(255,255,255,0.02); }
-    
-    .course-row {
-      padding: 0.8rem 1.2rem;
-      border-bottom: 1px solid var(--border-color);
-      display: flex; align-items: center; justify-content: space-between;
-      font-size: 0.95rem;
-    }
-    .course-row:last-child { border-bottom: none; }
-    .course-row.custom { background: rgba(0, 206, 201, 0.05); }
-    
-    .grade-badge {
-      padding: 4px 8px; border-radius: 6px; font-weight: 700; font-size: 0.8rem;
-      min-width: 30px; text-align: center;
-    }
-    .grade-A { background: rgba(46, 204, 113, 0.15); color: #27ae60; }
-    .grade-B { background: rgba(52, 152, 219, 0.15); color: #2980b9; }
-    .grade-C { background: rgba(241, 196, 15, 0.15); color: #f39c12; }
-    .grade-D { background: rgba(230, 126, 34, 0.15); color: #d35400; }
-    .grade-F { background: rgba(231, 76, 60, 0.15); color: #c0392b; }
-
-    /* --- Floating Action Bar (Mobile) --- */
-    .fab-container {
-      position: fixed; bottom: 20px; right: 20px; z-index: 900;
-      display: flex; flex-direction: column; gap: 10px;
-    }
-    .fab-btn {
-      width: 56px; height: 56px; border-radius: 28px;
-      background: var(--brand); color: white;
-      border: none; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 1.2rem; transition: transform 0.2s;
-    }
-    .fab-btn:hover { transform: scale(1.1); }
-
-    /* --- Modals & Overlays --- */
-    .modal-content {
-      background: var(--bg-card);
-      border-radius: 20px;
-      border: 1px solid var(--border-color);
-    }
-    .modal-header { border-bottom: 1px solid var(--border-color); }
-    .modal-footer { border-top: 1px solid var(--border-color); }
-
-    /* --- Utilities --- */
-    .text-brand { color: var(--brand); }
-    .hidden { display: none !important; }
-    .fade-in { animation: fadeIn 0.5s ease-out forwards; }
-    @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-
-    /* Drag & Drop */
-    .dragging { opacity: 0.5; background: var(--bg-body); }
-    .drag-over { border: 2px dashed var(--brand); }
-
-  </style>
-</head>
-<body>
-
-  <!-- Header -->
-  <header class="app-header">
-    <div class="container d-flex justify-content-between align-items-center">
-      <div class="d-flex align-items-center gap-2">
-        <i class="fa-solid fa-graduation-cap text-brand fs-4"></i>
-        <span class="brand-logo">UAF Calc</span>
+const Header = ({ toggleSidebar, serverStatus }) => (
+  <header className="bg-emerald-700 text-white shadow-lg sticky top-0 z-50">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div className="flex items-center space-x-3">
+        <button onClick={toggleSidebar} className="lg:hidden p-2 rounded-md hover:bg-emerald-600 focus:outline-none">
+          <Menu className="h-6 w-6" />
+        </button>
+        <div className="flex items-center space-x-2">
+          <GraduationCap className="h-8 w-8 text-yellow-300" />
+          <div>
+            <h1 className="text-lg font-bold leading-tight">UAF Calculator</h1>
+            <p className="text-xs text-emerald-200 hidden sm:block">University of Agriculture Faisalabad</p>
+          </div>
+        </div>
       </div>
-      <div class="d-flex gap-2">
-        <button class="btn-icon" id="themeToggle"><i class="fa-solid fa-moon"></i></button>
-        <button class="btn-icon" id="profileManagerBtn" title="Profiles"><i class="fa-solid fa-user"></i></button>
+      <div className="flex items-center space-x-4">
+        <div className={`flex items-center space-x-1 px-3 py-1 rounded-full text-xs font-medium ${serverStatus ? 'bg-emerald-600 text-emerald-100' : 'bg-red-600 text-white'}`}>
+          {serverStatus ? <Wifi className="h-3 w-3" /> : <WifiOff className="h-3 w-3" />}
+          <span className="hidden sm:inline">{serverStatus ? 'Server Online' : 'Server Offline'}</span>
+        </div>
       </div>
     </div>
   </header>
+);
 
-  <main class="container py-4">
-    
-    <!-- 1. DASHBOARD VIEW (Shown when no result loaded) -->
-    <div id="dashboardView" class="fade-in">
-      <div class="text-center mt-3">
-        <h1 class="fw-bold mb-2">Track Your Success</h1>
-        <p class="text-muted mb-4">Automatic CGPA calculation for UAF students.</p>
-        
-        <!-- System Status Pill -->
-        <div class="status-pill mb-4" id="systemStatusBar">
-            <div class="status-item" title="Learning Management System">
-                <span class="small text-muted">LMS</span>
-                <div class="status-dot" id="statusLMS"></div>
+const Sidebar = ({ isOpen, activeTab, setActiveTab, closeSidebar }) => {
+  const menuItems = [
+    { id: 'calculator', label: 'CGPA Calculator', icon: Calculator },
+    { id: 'forecast', label: 'Forecaster', icon: TrendingUp },
+    { id: 'profiles', label: 'Profiles', icon: Users },
+    { id: 'import', label: 'Import Result', icon: Download },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
+
+  return (
+    <>
+      {/* Mobile Overlay */}
+      {isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden" onClick={closeSidebar}></div>
+      )}
+      
+      {/* Sidebar Content */}
+      <aside className={`fixed lg:static inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 transform transition-transform duration-200 ease-in-out lg:transform-none ${isOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="h-full flex flex-col">
+          <div className="h-16 flex items-center px-6 border-b border-gray-100 lg:hidden">
+             <span className="font-bold text-gray-800">Menu</span>
+             <button onClick={closeSidebar} className="ml-auto p-2"><X className="h-5 w-5 text-gray-500" /></button>
+          </div>
+          <nav className="flex-1 py-6 px-3 space-y-1 overflow-y-auto">
+            {menuItems.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => { setActiveTab(item.id); closeSidebar(); }}
+                className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+                  activeTab === item.id 
+                    ? 'bg-emerald-50 text-emerald-700' 
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <item.icon className={`h-5 w-5 ${activeTab === item.id ? 'text-emerald-600' : 'text-gray-400'}`} />
+                <span>{item.label}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="p-4 border-t border-gray-100">
+            <div className="bg-emerald-900 rounded-xl p-4 text-center">
+              <p className="text-xs text-emerald-200 mb-2">Developed for UAF Students</p>
+              <div className="text-xs text-emerald-400 font-mono">v2.0.0 Stable</div>
             </div>
-            <div style="width:1px; height:15px; background:var(--border-color);"></div>
-            <div class="status-item" title="Attendance System">
-                <span class="small text-muted">ATS</span>
-                <div class="status-dot" id="statusATS"></div>
-            </div>
+          </div>
         </div>
+      </aside>
+    </>
+  );
+};
+
+const StatCard = ({ label, value, subtext, color = "emerald" }) => (
+  <div className={`bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex flex-col justify-between hover:shadow-md transition-shadow border-l-4 border-l-${color}-500`}>
+    <p className="text-sm font-medium text-gray-500">{label}</p>
+    <div>
+      <h3 className={`text-2xl font-bold text-${color}-600 mt-1`}>{value}</h3>
+      {subtext && <p className="text-xs text-gray-400 mt-1">{subtext}</p>}
+    </div>
+  </div>
+);
+
+// --- Main Views ---
+
+const CalculatorView = ({ profile, updateProfile, settings }) => {
+  const [expandedSemester, setExpandedSemester] = useState(null);
+
+  const addSemester = () => {
+    const newSem = {
+      id: generateId(),
+      name: `Semester ${profile.semesters.length + 1}`,
+      subjects: [{ id: generateId(), name: 'Subject 1', marks: '', total: 60, ch: 3 }]
+    };
+    updateProfile({ ...profile, semesters: [...profile.semesters, newSem] });
+    setExpandedSemester(newSem.id);
+  };
+
+  const removeSemester = (semId) => {
+    if (window.confirm("Delete this semester?")) {
+      updateProfile({ ...profile, semesters: profile.semesters.filter(s => s.id !== semId) });
+    }
+  };
+
+  const updateSemester = (semId, newData) => {
+    updateProfile({
+      ...profile,
+      semesters: profile.semesters.map(s => s.id === semId ? { ...s, ...newData } : s)
+    });
+  };
+
+  const addSubject = (semId) => {
+    const sem = profile.semesters.find(s => s.id === semId);
+    const newSub = { id: generateId(), name: `Subject ${sem.subjects.length + 1}`, marks: '', total: 60, ch: 3 };
+    updateSemester(semId, { subjects: [...sem.subjects, newSub] });
+  };
+
+  const updateSubject = (semId, subId, field, value) => {
+    const sem = profile.semesters.find(s => s.id === semId);
+    const updatedSubjects = sem.subjects.map(sub => 
+      sub.id === subId ? { ...sub, [field]: value } : sub
+    );
+    updateSemester(semId, { subjects: updatedSubjects });
+  };
+
+  const removeSubject = (semId, subId) => {
+    const sem = profile.semesters.find(s => s.id === semId);
+    updateSemester(semId, { subjects: sem.subjects.filter(s => s.id !== subId) });
+  };
+
+  // Calculations
+  const semesterStats = useMemo(() => {
+    return profile.semesters.map(sem => {
+      let totalQP = 0;
+      let totalCH = 0;
+      sem.subjects.forEach(sub => {
+        const ch = parseFloat(sub.ch) || 0;
+        const gp = calculateGP(sub.marks, sub.total, settings.gradingScale);
+        totalQP += (gp * ch);
+        totalCH += ch;
+      });
+      return { ...sem, gpa: totalCH ? (totalQP / totalCH).toFixed(2) : '0.00', totalCH };
+    });
+  }, [profile.semesters, settings.gradingScale]);
+
+  const cgpaStats = useMemo(() => {
+    let grandTotalQP = 0;
+    let grandTotalCH = 0;
+    profile.semesters.forEach(sem => {
+       sem.subjects.forEach(sub => {
+        const ch = parseFloat(sub.ch) || 0;
+        const gp = calculateGP(sub.marks, sub.total, settings.gradingScale);
+        grandTotalQP += (gp * ch);
+        grandTotalCH += ch;
+       });
+    });
+    return {
+      cgpa: grandTotalCH ? (grandTotalQP / grandTotalCH).toFixed(2) : '0.00',
+      totalCH: grandTotalCH
+    };
+  }, [profile.semesters, settings.gradingScale]);
+
+  return (
+    <div className="space-y-6 animate-fade-in">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Current CGPA" value={cgpaStats.cgpa} subtext="Cumulative" color="emerald" />
+        <StatCard label="Credit Hours" value={cgpaStats.totalCH} subtext="Total Completed" color="blue" />
+        <StatCard label="Semesters" value={profile.semesters.length} subtext="Active" color="purple" />
+        <StatCard label="Degree Type" value={profile.degreeType || 'BS'} subtext="Program" color="orange" />
       </div>
 
-      <!-- Search Box -->
-      <form id="fetchForm" class="search-wrapper">
-        <input type="text" id="regInput" class="search-input" placeholder="e.g. 2020-ag-1234" required autocomplete="off">
-        <button type="submit" class="btn-brand search-btn">
-          Fetch <i class="fa-solid fa-arrow-right ms-2"></i>
+      <div className="flex justify-between items-center">
+        <h2 className="text-xl font-bold text-gray-800">Academic Record</h2>
+        <button onClick={addSemester} className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm text-sm font-medium">
+          <Plus className="h-4 w-4" />
+          <span>Add Semester</span>
         </button>
+      </div>
+
+      <div className="space-y-4">
+        {semesterStats.length === 0 && (
+          <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+            <BookOpen className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+            <p className="text-gray-500">No semesters added yet.</p>
+            <p className="text-sm text-gray-400">Click "Add Semester" to start calculating.</p>
+          </div>
+        )}
+
+        {semesterStats.map((sem, index) => (
+          <div key={sem.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div 
+              className="p-4 bg-gray-50 flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
+              onClick={() => setExpandedSemester(expandedSemester === sem.id ? null : sem.id)}
+            >
+              <div className="flex items-center space-x-4">
+                <div className={`p-1 rounded-full ${expandedSemester === sem.id ? 'bg-emerald-100 text-emerald-600' : 'text-gray-400'}`}>
+                  {expandedSemester === sem.id ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+                </div>
+                <div>
+                  <h3 className="font-semibold text-gray-800">{sem.name}</h3>
+                  <p className="text-xs text-gray-500">GPA: <span className="font-bold text-emerald-600">{sem.gpa}</span> • CH: {sem.totalCH}</p>
+                </div>
+              </div>
+              <button 
+                onClick={(e) => { e.stopPropagation(); removeSemester(sem.id); }}
+                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full transition"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+
+            {expandedSemester === sem.id && (
+              <div className="p-4 overflow-x-auto">
+                <table className="w-full min-w-[600px]">
+                  <thead>
+                    <tr className="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-100">
+                      <th className="pb-2 w-1/3">Subject</th>
+                      <th className="pb-2 w-20">Marks</th>
+                      <th className="pb-2 w-20">Total</th>
+                      <th className="pb-2 w-20">CH</th>
+                      <th className="pb-2 w-20">Grade</th>
+                      <th className="pb-2 w-10"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {sem.subjects.map((sub) => (
+                      <tr key={sub.id} className="group hover:bg-gray-50 transition-colors">
+                        <td className="py-2 pr-2">
+                          <input 
+                            type="text" 
+                            value={sub.name} 
+                            onChange={(e) => updateSubject(sem.id, sub.id, 'name', e.target.value)}
+                            className="w-full bg-transparent border-none focus:ring-0 text-sm text-gray-700 placeholder-gray-300 font-medium"
+                            placeholder="Subject Name"
+                          />
+                        </td>
+                        <td className="py-2 pr-2">
+                          <input 
+                            type="number" 
+                            value={sub.marks} 
+                            onChange={(e) => updateSubject(sem.id, sub.id, 'marks', e.target.value)}
+                            className="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition"
+                            placeholder="0"
+                          />
+                        </td>
+                        <td className="py-2 pr-2">
+                          <input 
+                            type="number" 
+                            value={sub.total} 
+                            onChange={(e) => updateSubject(sem.id, sub.id, 'total', e.target.value)}
+                            className="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition"
+                            placeholder="60"
+                          />
+                        </td>
+                        <td className="py-2 pr-2">
+                          <select 
+                            value={sub.ch} 
+                            onChange={(e) => updateSubject(sem.id, sub.id, 'ch', e.target.value)}
+                            className="w-full bg-gray-50 border border-gray-200 rounded px-2 py-1 text-sm focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition"
+                          >
+                            {[1, 2, 3, 4, 5, 6].map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </td>
+                        <td className="py-2 text-sm font-bold text-emerald-600">
+                          {calculateGradeLetter(sub.marks, sub.total, settings.gradingScale)} <span className="text-xs font-normal text-gray-400">({calculateGP(sub.marks, sub.total, settings.gradingScale).toFixed(2)})</span>
+                        </td>
+                        <td className="py-2 text-right">
+                          <button onClick={() => removeSubject(sem.id, sub.id)} className="text-gray-300 hover:text-red-500 transition opacity-0 group-hover:opacity-100">
+                            <X className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button onClick={() => addSubject(sem.id)} className="mt-3 text-xs font-medium text-emerald-600 hover:text-emerald-700 flex items-center space-x-1">
+                  <Plus className="h-3 w-3" />
+                  <span>Add Subject</span>
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const ForecasterView = ({ profile }) => {
+  const [targetCGPA, setTargetCGPA] = useState(3.0);
+  const [remainingCH, setRemainingCH] = useState(30);
+
+  // Calculate current stats
+  const currentStats = useMemo(() => {
+    let totalQP = 0;
+    let totalCH = 0;
+    profile.semesters.forEach(sem => {
+      sem.subjects.forEach(sub => {
+        totalQP += (parseFloat(sub.ch || 0) * calculateGP(sub.marks, sub.total));
+        totalCH += parseFloat(sub.ch || 0);
+      });
+    });
+    return { qp: totalQP, ch: totalCH, cgpa: totalCH ? totalQP / totalCH : 0 };
+  }, [profile]);
+
+  const requiredGPA = useMemo(() => {
+    const totalTargetQP = targetCGPA * (currentStats.ch + parseFloat(remainingCH));
+    const neededQP = totalTargetQP - currentStats.qp;
+    const gpa = neededQP / parseFloat(remainingCH);
+    return gpa > 4.0 || gpa < 0 ? null : gpa.toFixed(2);
+  }, [targetCGPA, remainingCH, currentStats]);
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+      <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-8 text-white text-center shadow-lg">
+        <h2 className="text-2xl font-bold mb-2">GPA Forecaster</h2>
+        <p className="text-emerald-100 mb-6">Plan your academic future. Calculate what GPA you need to hit your target.</p>
+        
+        {requiredGPA !== null ? (
+          <div className="bg-white/10 backdrop-blur-sm rounded-xl p-6 border border-white/20">
+            <p className="text-sm font-medium uppercase tracking-wider text-emerald-200">You Need to Average</p>
+            <div className="text-5xl font-extrabold my-2">{requiredGPA}</div>
+            <p className="text-sm text-emerald-100">GPA in your remaining semesters</p>
+          </div>
+        ) : (
+          <div className="bg-red-500/20 backdrop-blur-sm rounded-xl p-6 border border-red-500/30">
+            <p className="font-bold text-red-100">Impossible Target</p>
+            <p className="text-sm text-red-200 mt-1">Mathematically impossible to reach {targetCGPA} with given credits.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Target CGPA Goal</label>
+          <div className="flex items-center space-x-4">
+            <input 
+              type="range" 
+              min="0" 
+              max="4" 
+              step="0.01" 
+              value={targetCGPA} 
+              onChange={(e) => setTargetCGPA(parseFloat(e.target.value))}
+              className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+            />
+            <input 
+              type="number" 
+              value={targetCGPA}
+              onChange={(e) => setTargetCGPA(parseFloat(e.target.value))}
+              className="w-20 text-center font-bold text-emerald-600 border rounded-md p-2" 
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">Remaining Credit Hours</label>
+          <input 
+            type="number" 
+            value={remainingCH}
+            onChange={(e) => setRemainingCH(parseFloat(e.target.value))}
+            className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-emerald-500 focus:border-emerald-500 transition" 
+          />
+          <p className="text-xs text-gray-500 mt-2">
+            Currently Completed: <span className="font-medium">{currentStats.ch} CH</span> | Current CGPA: <span className="font-medium">{currentStats.cgpa.toFixed(2)}</span>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProfilesView = ({ profiles, currentProfileId, setCurrentProfileId, addProfile, deleteProfile }) => (
+  <div className="space-y-6 animate-fade-in">
+    <div className="flex justify-between items-center">
+      <h2 className="text-xl font-bold text-gray-800">Student Profiles</h2>
+      <button onClick={addProfile} className="flex items-center space-x-2 bg-emerald-600 text-white px-4 py-2 rounded-lg hover:bg-emerald-700 transition shadow-sm text-sm font-medium">
+        <Plus className="h-4 w-4" />
+        <span>New Profile</span>
+      </button>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      {profiles.map(profile => (
+        <div 
+          key={profile.id} 
+          className={`relative bg-white rounded-xl p-5 border-2 transition-all cursor-pointer ${
+            currentProfileId === profile.id 
+              ? 'border-emerald-500 shadow-md ring-2 ring-emerald-100' 
+              : 'border-transparent shadow-sm hover:border-emerald-200'
+          }`}
+          onClick={() => setCurrentProfileId(profile.id)}
+        >
+          <div className="flex justify-between items-start mb-3">
+            <div className="h-10 w-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600 font-bold text-lg">
+              {profile.name.charAt(0)}
+            </div>
+            {profiles.length > 1 && (
+              <button 
+                onClick={(e) => { e.stopPropagation(); deleteProfile(profile.id); }}
+                className="text-gray-300 hover:text-red-500 transition"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+          <h3 className="font-bold text-gray-800 truncate">{profile.name}</h3>
+          <p className="text-xs text-gray-500 mb-4 font-mono">{profile.agNumber || 'No Registration #'}</p>
+          <div className="flex items-center justify-between text-xs font-medium bg-gray-50 p-2 rounded-lg">
+            <span className="text-gray-500">{profile.semesters.length} Semesters</span>
+            <span className="text-emerald-600">{profile.degreeType || 'BS'}</span>
+          </div>
+          {currentProfileId === profile.id && (
+            <div className="absolute top-2 right-2">
+              <span className="flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const ImportView = ({ importData }) => {
+  const [agNumber, setAgNumber] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleImport = async (e) => {
+    e.preventDefault();
+    if (!agNumber) return;
+    setLoading(true);
+    setError('');
+
+    // Simulation of API Call
+    setTimeout(() => {
+      // In a real app, fetch(API_BASE_URL + '/result?reg=' + agNumber)
+      try {
+        // Mock success
+        const mockData = {
+          name: "Imported Student",
+          agNumber: agNumber,
+          degreeType: "BS",
+          semesters: [
+            {
+              id: generateId(),
+              name: "Semester 1",
+              subjects: [
+                { id: generateId(), name: "Intro to Computing", marks: 45, total: 60, ch: 3 },
+                { id: generateId(), name: "English I", marks: 50, total: 60, ch: 3 },
+              ]
+            }
+          ]
+        };
+        importData(mockData);
+        setLoading(false);
+        setAgNumber('');
+        alert("Data imported successfully!");
+      } catch (err) {
+        setError("Failed to fetch data. Please try again.");
+        setLoading(false);
+      }
+    }, 1500);
+  };
+
+  return (
+    <div className="max-w-md mx-auto space-y-6 animate-fade-in py-10">
+      <div className="text-center">
+        <div className="bg-emerald-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Download className="h-8 w-8 text-emerald-600" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-800">Import Results</h2>
+        <p className="text-sm text-gray-500 mt-2">Enter your AG Number to fetch results directly from UAF servers.</p>
+      </div>
+
+      <form onSubmit={handleImport} className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Registration Number</label>
+            <input 
+              type="text" 
+              placeholder="e.g. 2020-ag-1234"
+              value={agNumber}
+              onChange={(e) => setAgNumber(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-4 py-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+            />
+          </div>
+          
+          {error && <div className="text-xs text-red-500">{error}</div>}
+
+          <button 
+            type="submit" 
+            disabled={loading || !agNumber}
+            className={`w-full py-2.5 rounded-lg text-white font-medium shadow-sm transition-all flex justify-center items-center space-x-2 ${loading ? 'bg-gray-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700'}`}
+          >
+            {loading ? (
+              <span>Connecting...</span>
+            ) : (
+              <>
+                <Download className="h-4 w-4" />
+                <span>Fetch Result</span>
+              </>
+            )}
+          </button>
+        </div>
       </form>
-
-      <!-- Recent Profiles -->
-      <div id="recentProfilesSection" class="hidden">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-          <h5 class="fw-bold m-0">Recent Profiles</h5>
-          <button class="btn btn-sm btn-link text-decoration-none text-muted" id="viewAllProfiles">View All</button>
-        </div>
-        <div id="recentProfilesList">
-          <!-- Profiles injected here -->
-        </div>
-      </div>
-
-      <!-- Features Grid -->
-      <div class="row g-3 mt-4">
-        <div class="col-6">
-          <div class="glass-card p-3 text-center h-100">
-            <i class="fa-solid fa-wand-magic-sparkles text-brand fs-3 mb-2"></i>
-            <h6 class="fw-bold">Forecast</h6>
-            <p class="small text-muted mb-0">Plan future grades</p>
-          </div>
-        </div>
-        <div class="col-6">
-          <div class="glass-card p-3 text-center h-100">
-            <i class="fa-solid fa-file-pdf text-brand fs-3 mb-2"></i>
-            <h6 class="fw-bold">Export PDF</h6>
-            <p class="small text-muted mb-0">Official style</p>
-          </div>
-        </div>
-      </div>
+      <p className="text-xs text-center text-gray-400">Note: Requires active internet connection.</p>
     </div>
+  );
+};
 
-    <!-- 2. RESULT VIEW (Shown after fetch) -->
-    <div id="resultView" class="hidden fade-in">
-      
-      <!-- Back Button & Tools -->
-      <div class="d-flex justify-content-between mb-3">
-        <button class="btn btn-sm btn-light rounded-pill px-3" id="backToDash"><i class="fa-solid fa-arrow-left me-2"></i>Back</button>
-        <div class="d-flex gap-2">
-          <button class="btn btn-sm btn-light rounded-pill" id="actionAttendance"><i class="fa-solid fa-clipboard-user me-1"></i> Attendance</button>
-          <button class="btn btn-sm btn-light rounded-pill" id="actionPDF"><i class="fa-solid fa-file-pdf me-1"></i> PDF</button>
+const SettingsView = ({ settings, updateSettings }) => (
+  <div className="max-w-2xl mx-auto space-y-6 animate-fade-in">
+    <h2 className="text-xl font-bold text-gray-800">Application Settings</h2>
+    
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 divide-y divide-gray-100">
+      <div className="p-6">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h3 className="font-medium text-gray-900">Grading System</h3>
+            <p className="text-xs text-gray-500">Select the calculation method used by your department.</p>
+          </div>
+          <Settings className="h-5 w-5 text-gray-400" />
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <button 
+            onClick={() => updateSettings({ ...settings, gradingScale: 'modern' })}
+            className={`p-3 rounded-lg border text-sm font-medium text-left transition-all ${settings.gradingScale === 'modern' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 hover:bg-gray-50'}`}
+          >
+            <div className="font-bold">HEC / Modern</div>
+            <div className="text-xs opacity-75 font-normal mt-1">50% Passing Marks. Standard 4.0 Scale.</div>
+          </button>
+          <button 
+            onClick={() => updateSettings({ ...settings, gradingScale: 'legacy' })}
+            className={`p-3 rounded-lg border text-sm font-medium text-left transition-all ${settings.gradingScale === 'legacy' ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-gray-200 hover:bg-gray-50'}`}
+          >
+            <div className="font-bold">Legacy Scheme</div>
+            <div className="text-xs opacity-75 font-normal mt-1">40% Passing Marks. Progressive Scale.</div>
+          </button>
         </div>
       </div>
 
-      <!-- Main GPA Card -->
-      <div class="glass-card p-4 mb-4 text-center position-relative">
-        <!-- B.Ed Toggle Switch -->
-        <div class="position-absolute top-0 end-0 m-3" id="bedToggleContainer" style="display:none;">
-           <div class="form-check form-switch">
-              <input class="form-check-input" type="checkbox" id="bedModeSwitch">
-              <label class="form-check-label small fw-bold text-muted" for="bedModeSwitch">B.Ed</label>
-           </div>
-        </div>
-
-        <h3 class="fw-bold mb-0" id="studentName">Student Name</h3>
-        <p class="text-muted small mb-4" id="studentReg">2020-ag-xxxx</p>
-
-        <div class="gpa-circle mb-3">
-          <svg viewBox="0 0 36 36">
-            <path class="gpa-circle-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-            <path id="gpaCirclePath" class="gpa-circle-val" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
-          </svg>
-          <div class="gpa-text">
-            <span class="display-4 fw-bold text-brand" id="displayCGPA">0.00</span>
-            <span class="d-block small text-muted font-monospace">CGPA</span>
-          </div>
-        </div>
-
-        <div class="row mt-4 pt-3 border-top border-light">
-          <div class="col-4 border-end border-light">
-            <small class="d-block text-muted">Marks</small>
-            <span class="fw-bold" id="displayMarks">0</span>
-          </div>
-          <div class="col-4 border-end border-light">
-            <small class="d-block text-muted">Percentage</small>
-            <span class="fw-bold" id="displayPercentage">0%</span>
-          </div>
-          <div class="col-4">
-            <small class="d-block text-muted">Courses</small>
-            <span class="fw-bold" id="displayCourses">0</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Chart (Collapsible) -->
-      <div class="glass-card mb-4">
-        <div class="p-3 d-flex justify-content-between align-items-center" data-bs-toggle="collapse" data-bs-target="#chartCollapse" style="cursor:pointer;">
-          <h6 class="fw-bold m-0"><i class="fa-solid fa-chart-line me-2 text-brand"></i>Performance Trend</h6>
-          <i class="fa-solid fa-chevron-down text-muted"></i>
-        </div>
-        <div class="collapse show" id="chartCollapse">
-          <div class="p-3 pt-0" style="height: 250px;">
-            <canvas id="gpaChart"></canvas>
-          </div>
-        </div>
-      </div>
-
-      <!-- Semesters List -->
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="fw-bold m-0">Semesters</h5>
-        <button class="btn btn-sm btn-brand rounded-pill" id="btnForecast"><i class="fa-solid fa-plus"></i> Forecast</button>
-      </div>
-      
-      <div id="semestersContainer">
-        <!-- Semester cards injected here -->
-      </div>
-
-    </div>
-
-  </main>
-
-  <!-- Floating Action Button (FAB) for quick add -->
-  <div class="fab-container hidden" id="fabContainer">
-    <button class="fab-btn" id="fabAddCourse" title="Add Custom Course"><i class="fa-solid fa-plus"></i></button>
-  </div>
-
-  <!-- MODALS -->
-
-  <!-- Profile Manager Modal -->
-  <div class="modal fade" id="profileModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title fw-bold">My Profiles</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body p-0">
-          <div id="modalProfileList" class="list-group list-group-flush"></div>
-        </div>
-        <div class="modal-footer justify-content-between">
-          <button class="btn btn-sm btn-outline-secondary" onclick="exportProfiles()"><i class="fa-solid fa-download"></i> Export</button>
-          <label class="btn btn-sm btn-outline-primary m-0">
-            <i class="fa-solid fa-upload"></i> Import <input type="file" hidden onchange="importProfiles(this)">
-          </label>
-        </div>
+      <div className="p-6">
+        <h3 className="font-medium text-gray-900 mb-4">About</h3>
+        <p className="text-sm text-gray-500 leading-relaxed">
+          This calculator uses the latest algorithms consistent with University of Agriculture Faisalabad (UAF) examination policies. 
+          While we strive for 100% accuracy, please verify official results from the controller of examinations.
+        </p>
       </div>
     </div>
   </div>
+);
 
-  <!-- Attendance Modal -->
-  <div class="modal fade" id="attendanceModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title fw-bold">Import Attendance Courses</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <p class="small text-muted">The following courses were found in the Attendance System but missing from LMS. Select to import.</p>
-          <div id="attendanceList"></div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-brand w-100" id="btnConfirmImport">Import Selected</button>
-        </div>
-      </div>
-    </div>
-  </div>
+// --- Main Application ---
 
-  <!-- Add Course Modal -->
-  <div class="modal fade" id="addCourseModal" tabindex="-1">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title fw-bold">Add Custom Course</h5>
-          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-        </div>
-        <div class="modal-body">
-          <form id="customCourseForm">
-            <input type="hidden" id="targetSemester">
-            <div class="mb-3">
-              <label class="form-label small text-muted">Course Code</label>
-              <input type="text" class="form-control" id="ccCode" placeholder="e.g. CS-101" required>
-            </div>
-            <div class="row">
-              <div class="col-6 mb-3">
-                <label class="form-label small text-muted">Obtained Marks</label>
-                <input type="number" class="form-control" id="ccMarks" required>
-              </div>
-              <div class="col-6 mb-3">
-                <label class="form-label small text-muted">Credit Hours</label>
-                <select class="form-select" id="ccCredit">
-                  <option value="3" selected>3</option>
-                  <option value="4">4</option>
-                  <option value="2">2</option>
-                  <option value="1">1</option>
-                </select>
-              </div>
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-brand w-100" id="btnSaveCourse">Add Course</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Restricted Access Modal -->
-  <div class="modal fade" id="restrictedModal" tabindex="-1" data-bs-backdrop="static">
-    <div class="modal-dialog modal-dialog-centered">
-      <div class="modal-content border-danger">
-        <div class="modal-header bg-danger text-white">
-          <h5 class="modal-title"><i class="fa-solid fa-lock me-2"></i>Restricted Access</h5>
-        </div>
-        <div class="modal-body">
-          <p>This record is protected. Please enter the passkey.</p>
-          <input type="password" id="passKeyInput" class="form-control" placeholder="Passkey">
-          <div class="text-danger small mt-2 hidden" id="passKeyError">Incorrect Passkey</div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button class="btn btn-danger" id="btnUnlock">Unlock</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Toast Container -->
-  <div class="toast-container position-fixed bottom-0 start-50 translate-middle-x p-3" style="z-index: 1100">
-    <div id="liveToast" class="toast align-items-center border-0 shadow-lg" role="alert" aria-live="assertive" aria-atomic="true">
-      <div class="d-flex">
-        <div class="toast-body fw-medium" id="toastMsg">Hello!</div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+export default function App() {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState('calculator');
+  const [serverStatus, setServerStatus] = useState(true);
   
-<script>
-/**
- * UAF CGPA Calculator - Ultimate Edition
- * Features: Mobile First, B.Ed Support, Attendance Import, Drag & Drop, PDF Export, LocalStorage Profiles
- */
+  // State: Profiles
+  const [profiles, setProfiles] = useState(() => {
+    const saved = localStorage.getItem('uaf_profiles');
+    return saved ? JSON.parse(saved) : [{
+      id: 'default',
+      name: 'My Profile',
+      agNumber: '',
+      degreeType: 'BS',
+      semesters: []
+    }];
+  });
 
-document.addEventListener('DOMContentLoaded', () => {
-    
-    // --- Configuration & Constants ---
-    const API_ENDPOINT = '/api/result-scraper?action=scrape_single';
-    const ATTENDANCE_ENDPOINT = '/api/result-scraper?action=scrape_attendance';
-    const STATUS_ENDPOINT = '/api/result-scraper?action=server_status';
-    const BED_COURSES = new Set([
-        'EDU-501', 'EDU-503', 'EDU-505', 'EDU-507', 'EDU-509', 'EDU-511', 'EDU-513',
-        'EDU-502', 'EDU-504', 'EDU-506', 'EDU-508', 'EDU-510', 'EDU-512', 'EDU-516',
-        'EDU-601', 'EDU-604', 'EDU-605', 'EDU-607', 'EDU-608', 'EDU-623'
-    ]);
-    const RESTRICTED_MAP = {
-        '2020-ag-9423': 'am9rZXI5MTE=', '2020-ag-8662': 'am9rZXI5MTE=',
-        '2020-ag-8876': 'am9rZXI5MTE=', '2020-ag-8636': 'am9rZXI5MTE=',
-        '2019-ag-8136': 'bWlzczkxMQ=='
+  const [currentProfileId, setCurrentProfileId] = useState(() => {
+    return localStorage.getItem('uaf_current_profile_id') || 'default';
+  });
+
+  // State: Settings
+  const [settings, setSettings] = useState(() => {
+    const saved = localStorage.getItem('uaf_settings');
+    return saved ? JSON.parse(saved) : { gradingScale: 'modern' };
+  });
+
+  // Effect: Persistence
+  useEffect(() => {
+    localStorage.setItem('uaf_profiles', JSON.stringify(profiles));
+    localStorage.setItem('uaf_current_profile_id', currentProfileId);
+    localStorage.setItem('uaf_settings', JSON.stringify(settings));
+  }, [profiles, currentProfileId, settings]);
+
+  // Effect: Server Heartbeat Simulation
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Simulate checking server status
+      setServerStatus(Math.random() > 0.05); // 95% uptime sim
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Helpers
+  const currentProfile = profiles.find(p => p.id === currentProfileId) || profiles[0];
+
+  const updateProfile = (updatedProfile) => {
+    setProfiles(profiles.map(p => p.id === updatedProfile.id ? updatedProfile : p));
+  };
+
+  const addProfile = () => {
+    const newId = generateId();
+    const newProfile = {
+      id: newId,
+      name: `Student ${profiles.length + 1}`,
+      agNumber: '',
+      degreeType: 'BS',
+      semesters: []
     };
+    setProfiles([...profiles, newProfile]);
+    setCurrentProfileId(newId);
+    setActiveTab('calculator');
+  };
 
-    // --- State ---
-    let appData = null; // The main data object
-    let currentProfileId = null;
-    let bedMode = false;
-    let chartInstance = null;
-    let pendingRegNo = null; // For restricted access
-    let statusInterval = null;
+  const deleteProfile = (id) => {
+    if (profiles.length <= 1) {
+      alert("Cannot delete the last profile.");
+      return;
+    }
+    const newProfiles = profiles.filter(p => p.id !== id);
+    setProfiles(newProfiles);
+    setCurrentProfileId(newProfiles[0].id);
+  };
 
-    // --- Elements ---
-    const views = {
-        dash: document.getElementById('dashboardView'),
-        result: document.getElementById('resultView')
-    };
-    const inputs = {
-        reg: document.getElementById('regInput')
-    };
-    
-    // --- Initialization ---
-    initTheme();
-    renderRecentProfiles();
-    checkServerStatus();
-    startStatusPoller();
-    
-    // --- Event Listeners ---
-    
-    // 1. Fetch Logic
-    document.getElementById('fetchForm').addEventListener('submit', (e) => {
-        e.preventDefault();
-        const reg = inputs.reg.value.trim();
-        if(!reg) return showToast('Please enter a Registration Number', 'warning');
+  const importData = (data) => {
+    const newProfile = { ...data, id: generateId() };
+    setProfiles([...profiles, newProfile]);
+    setCurrentProfileId(newProfile.id);
+    setActiveTab('calculator');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-900">
+      <Header toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)} serverStatus={serverStatus} />
+      
+      <div className="flex flex-1 overflow-hidden relative">
+        <Sidebar 
+          isOpen={isSidebarOpen} 
+          activeTab={activeTab} 
+          setActiveTab={setActiveTab} 
+          closeSidebar={() => setIsSidebarOpen(false)} 
+        />
         
-        // Restricted Access Check
-        if(RESTRICTED_MAP[reg.toLowerCase()]) {
-            pendingRegNo = reg.toLowerCase();
-            new bootstrap.Modal(document.getElementById('restrictedModal')).show();
-        } else {
-            fetchResult(reg);
-        }
-    });
-
-    document.getElementById('btnUnlock').addEventListener('click', () => {
-        const key = document.getElementById('passKeyInput').value;
-        if(btoa(key) === RESTRICTED_MAP[pendingRegNo]) {
-            bootstrap.Modal.getInstance(document.getElementById('restrictedModal')).hide();
-            fetchResult(pendingRegNo);
-        } else {
-            document.getElementById('passKeyError').classList.remove('hidden');
-        }
-    });
-
-    // 2. Navigation
-    document.getElementById('backToDash').addEventListener('click', () => switchView('dash'));
-    document.getElementById('profileManagerBtn').addEventListener('click', openProfileManager);
-    
-    // 3. Actions
-    document.getElementById('themeToggle').addEventListener('click', toggleTheme);
-    document.getElementById('bedModeSwitch').addEventListener('change', (e) => {
-        bedMode = e.target.checked;
-        if(appData) {
-            appData.bedMode = bedMode; // Persist preference
-            saveProfile(appData);
-            renderResultView();
-        }
-    });
-    document.getElementById('btnForecast').addEventListener('click', addForecastSemester);
-    document.getElementById('actionPDF').addEventListener('click', generatePDF);
-    document.getElementById('actionAttendance').addEventListener('click', fetchAttendance);
-    document.getElementById('btnConfirmImport').addEventListener('click', importAttendanceData);
-    
-    // 4. Custom Course
-    document.getElementById('btnSaveCourse').addEventListener('click', saveCustomCourse);
-
-    // --- Core Functions ---
-
-    function switchView(viewName) {
-        if(viewName === 'dash') {
-            views.result.classList.add('hidden');
-            views.dash.classList.remove('hidden');
-            renderRecentProfiles();
-            // Ensure status checks are active
-            checkServerStatus(); 
-        } else {
-            views.dash.classList.add('hidden');
-            views.result.classList.remove('hidden');
-        }
-        window.scrollTo(0,0);
-    }
-
-    function startStatusPoller() {
-        if(statusInterval) clearInterval(statusInterval);
-        statusInterval = setInterval(checkServerStatus, 30000); // Poll every 30s
-    }
-
-    async function checkServerStatus() {
-        const lmsDot = document.getElementById('statusLMS');
-        const atsDot = document.getElementById('statusATS');
-        
-        try {
-            // Attempt to fetch status
-            // Use a short timeout to prevent hanging if offline
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-            const res = await fetch(STATUS_ENDPOINT, { signal: controller.signal });
-            clearTimeout(timeoutId);
-            
-            if(res.ok) {
-                const data = await res.json();
-                updateStatusDot(lmsDot, data.lms_status === 'online');
-                updateStatusDot(atsDot, data.attnd_status === 'online');
-            } else {
-                throw new Error('Status check failed');
-            }
-        } catch (e) {
-            // Assume online to avoid scaring users if API is just momentarily unreachable
-            // or if CORS/Network issues occur on client side
-            updateStatusDot(lmsDot, true);
-            updateStatusDot(atsDot, true);
-        }
-    }
-
-    function updateStatusDot(element, isOnline) {
-        if(isOnline) {
-            element.className = 'status-dot online';
-            element.parentElement.title = "System Online";
-        } else {
-            element.className = 'status-dot offline';
-            element.parentElement.title = "System Offline/Unreachable";
-        }
-    }
-
-    async function fetchResult(regNo) {
-        showToast('Fetching results...', 'info');
-        try {
-            const res = await fetch(`${API_ENDPOINT}&registrationNumber=${encodeURIComponent(regNo)}`);
-            const data = await res.json();
-            
-            if(!data.success) throw new Error(data.message);
-            
-            // Process Data
-            appData = processRawData(data);
-            
-            // Save & Render
-            saveProfile(appData);
-            switchView('result');
-            renderResultView();
-            showToast('Results loaded successfully', 'success');
-
-        } catch (e) {
-            console.error(e);
-            showToast(e.message || 'Failed to fetch results', 'error');
-        }
-    }
-
-    // --- Data Processing Logic (The Brains) ---
-
-    function processRawData(apiData) {
-        const studentInfo = {
-            name: apiData.resultData[0]?.StudentName || 'Unknown',
-            registration: apiData.resultData[0]?.RegistrationNo || 'Unknown'
-        };
-        
-        const semesters = {};
-        let hasBedCourses = false;
-
-        apiData.resultData.forEach(c => {
-            const rawSem = c.Semester;
-            const normSem = normalizeSemester(rawSem);
-            
-            if(!semesters[normSem]) {
-                semesters[normSem] = {
-                    name: normSem,
-                    rawName: rawSem,
-                    courses: [],
-                    order: getSemesterOrder(normSem)
-                };
-            }
-
-            const code = (c.CourseCode || '').trim().toUpperCase();
-            if(BED_COURSES.has(code)) hasBedCourses = true;
-
-            const ch = parseInt(c.CreditHours.match(/\d+/)?.[0] || 0);
-            const marks = parseFloat(c.Total || 0);
-            const grade = c.Grade || getGradeFromMarks(marks, ch);
-            const qp = calculateQP(marks, ch, grade);
-
-            semesters[normSem].courses.push({
-                code, title: c.CourseTitle,
-                creditHours: ch, marks, grade,
-                qualityPoints: qp,
-                isRepeated: false, isExtra: false, isCustom: false
-            });
-        });
-
-        // Determine Repeats (The Logic)
-        const courseHistory = {};
-        // 1. Gather all attempts
-        Object.values(semesters).forEach(sem => {
-            sem.courses.forEach(course => {
-                if(!courseHistory[course.code]) courseHistory[course.code] = [];
-                courseHistory[course.code].push({ semester: sem.name, courseObj: course });
-            });
-        });
-        // 2. Mark Repeats
-        Object.values(courseHistory).forEach(attempts => {
-            if(attempts.length > 1) {
-                // Keep logic simple: Best marks wins
-                const passed = attempts.filter(a => a.courseObj.grade !== 'F');
-                let best = passed.length ? passed.reduce((a,b) => a.courseObj.marks > b.courseObj.marks ? a : b) 
-                                         : attempts.reduce((a,b) => a.courseObj.marks > b.courseObj.marks ? a : b);
-                
-                attempts.forEach(a => {
-                    a.courseObj.isRepeated = true;
-                    if(a !== best) a.courseObj.isExtra = true;
-                });
-            }
-        });
-
-        return {
-            id: studentInfo.registration,
-            studentInfo,
-            semesters,
-            bedMode: false, // User can toggle this later
-            hasBedCourses,
-            lastUpdated: new Date().toISOString()
-        };
-    }
-
-    function calculateQP(marks, ch, grade) {
-        if(grade === 'F') return 0;
-        if(grade === 'P') return ch * 4.0;
-        
-        // Exact UAF Formula Logic
-        let qp = 0;
-        if (ch === 3) {
-            if (marks >= 48) qp = 12;
-            else if (marks >= 30) qp = 12 - ((48 - marks) * 0.33333);
-            else if (marks < 30) qp = 6 - ((30 - marks) * 0.5);
-            if (marks < 24) qp = 0;
-        } else if (ch === 4) {
-            if (marks >= 64) qp = 16;
-            else if (marks >= 40) qp = 16 - ((64 - marks) * 0.33333);
-            else if (marks < 40) qp = 8 - ((40 - marks) * 0.5);
-            if (marks < 32) qp = 0;
-        } 
-        // Logic for 1, 2, 5, 6 CH would go here, simplified fallback:
-        else {
-            const maxMarks = ch * 20; 
-            const pct = marks / maxMarks;
-            if(pct >= 0.8) qp = ch * 4;
-            else if(pct >= 0.5) qp = ch * 3;
-            else if(pct >= 0.4) qp = ch * 2;
-            else qp = 0;
-        }
-        return Math.max(0, qp);
-    }
-
-    function getGradeFromMarks(marks, ch) {
-        const max = ch * 20;
-        const p = (marks/max)*100;
-        if(p >= 80) return 'A';
-        if(p >= 65) return 'B';
-        if(p >= 50) return 'C';
-        if(p >= 40) return 'D';
-        return 'F';
-    }
-
-    function normalizeSemester(raw) {
-        if(!raw) return 'Unknown';
-        const lower = raw.toLowerCase();
-        let year = raw.match(/\d{4}/)?.[0] || '';
-        if(lower.includes('winter')) return `Winter ${year}`;
-        if(lower.includes('spring')) return `Spring ${year}`;
-        if(lower.includes('summer')) return `Summer ${year}`;
-        return raw;
-    }
-
-    function getSemesterOrder(name) {
-        const parts = name.split(' ');
-        const year = parseInt(parts[1]) || 9999;
-        const season = parts[0].toLowerCase();
-        let sVal = 4;
-        if(season === 'winter') sVal = 1;
-        if(season === 'spring') sVal = 2;
-        if(season === 'summer') sVal = 3;
-        return `${year}-${sVal}`;
-    }
-
-    // --- Calculation Engine ---
-
-    function calculateStats(data) {
-        let totalQP = 0, totalCH = 0, totalMarks = 0, maxMarksTotal = 0;
-        let courseCount = 0;
-
-        const activeSemesters = Object.values(data.semesters).sort((a,b) => a.order.localeCompare(b.order));
-
-        activeSemesters.forEach(sem => {
-            sem.courses.forEach(c => {
-                // B.Ed Filter Logic
-                const isBed = BED_COURSES.has(c.code);
-                
-                // If B.Ed mode ON, only show B.Ed courses
-                if(data.bedMode && !isBed) return; 
-                
-                // If B.Ed mode OFF, hide B.Ed courses if they exist in the dataset (assuming user wants separation)
-                if(!data.bedMode && isBed && data.hasBedCourses) return; 
-
-                if(!c.isExtra) {
-                    totalQP += c.qualityPoints;
-                    totalCH += c.creditHours;
-                    totalMarks += c.marks;
-                    maxMarksTotal += (c.creditHours * 20); 
-                    courseCount++;
-                }
-            });
-        });
-
-        const cgpa = totalCH ? totalQP / totalCH : 0;
-        const percentage = maxMarksTotal ? (totalMarks / maxMarksTotal) * 100 : 0;
-
-        return { cgpa, percentage, totalMarks, courseCount };
-    }
-
-    // --- Rendering ---
-
-    function renderResultView() {
-        if(!appData) return;
-
-        // B.Ed Toggle Visibility
-        const bedToggle = document.getElementById('bedToggleContainer');
-        if(appData.hasBedCourses) {
-            bedToggle.style.display = 'block';
-            document.getElementById('bedModeSwitch').checked = appData.bedMode;
-        } else {
-            bedToggle.style.display = 'none';
-        }
-
-        // 1. Header Stats
-        const stats = calculateStats(appData);
-        document.getElementById('studentName').textContent = appData.studentInfo.name;
-        document.getElementById('studentReg').textContent = appData.studentInfo.registration;
-        
-        animateValue('displayCGPA', parseFloat(document.getElementById('displayCGPA').innerText), stats.cgpa, 1000, 4);
-        animateValue('displayPercentage', parseFloat(document.getElementById('displayPercentage').innerText), stats.percentage, 1000, 2, '%');
-        document.getElementById('displayMarks').textContent = stats.totalMarks.toFixed(0);
-        document.getElementById('displayCourses').textContent = stats.courseCount;
-
-        const pct = (stats.cgpa / 4.0) * 100;
-        setTimeout(() => document.getElementById('gpaCirclePath').style.strokeDasharray = `${pct}, 100`, 100);
-
-        // 2. Semesters List
-        const container = document.getElementById('semestersContainer');
-        container.innerHTML = '';
-        
-        const sortedSemesters = Object.values(appData.semesters).sort((a,b) => a.order.localeCompare(b.order));
-        
-        sortedSemesters.forEach(sem => {
-            // Filter courses for display based on Bed Mode
-            const displayCourses = sem.courses.filter(c => {
-                const isBed = BED_COURSES.has(c.code);
-                if(appData.bedMode) return isBed;
-                if(appData.hasBedCourses) return !isBed;
-                return true;
-            });
-
-            if(displayCourses.length === 0) return;
-
-            // Calculate Semester GPA
-            let sQP = 0, sCH = 0;
-            displayCourses.forEach(c => { if(!c.isExtra) { sQP += c.qualityPoints; sCH += c.creditHours; } });
-            const sGPA = sCH ? sQP/sCH : 0;
-
-            const div = document.createElement('div');
-            div.className = 'semester-item fade-in';
-            div.innerHTML = `
-                <div class="semester-header">
-                    <div>
-                        <h6 class="fw-bold mb-0">${sem.name}</h6>
-                        <small class="text-muted">${displayCourses.length} Courses</small>
-                    </div>
-                    <div class="text-end">
-                        <span class="badge bg-light text-dark border">GPA: ${sGPA.toFixed(2)}</span>
-                        <button class="btn btn-sm btn-link text-muted p-0 ms-2" onclick="deleteSemester('${sem.name}')"><i class="fa-solid fa-trash"></i></button>
-                    </div>
-                </div>
-                <div class="semester-body" ondrop="drop(event, '${sem.name}')" ondragover="allowDrop(event)">
-                    ${displayCourses.map((c, idx) => `
-                        <div class="course-row ${c.isCustom ? 'custom' : ''}" draggable="true" ondragstart="drag(event, '${sem.name}', ${idx})">
-                            <div class="d-flex align-items-center" style="width:40%">
-                                <div class="fw-bold text-truncate">${c.code} ${c.isRepeated && !c.isExtra ? '<i class="fa-solid fa-check-circle text-success small"></i>' : ''}</div>
-                                ${c.isExtra ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.6rem">Rep</span>' : ''}
-                            </div>
-                            <div class="text-center text-muted" style="width:20%">${c.creditHours} CH</div>
-                            <div class="text-center text-muted" style="width:20%">${c.marks}</div>
-                            <div class="text-end" style="width:20%">
-                                <span class="grade-badge grade-${c.grade}">${c.grade}</span>
-                            </div>
-                        </div>
-                    `).join('')}
-                    <div class="p-2 text-center border-top border-light">
-                        <button class="btn btn-sm btn-light rounded-pill w-100 text-muted" onclick="openAddCourseModal('${sem.name}')"><i class="fa-solid fa-plus"></i> Add Course</button>
-                    </div>
-                </div>
-            `;
-            container.appendChild(div);
-        });
-
-        updateChart(sortedSemesters);
-    }
-
-    // --- Attendance Logic ---
-    async function fetchAttendance() {
-        if(!appData) return;
-        const reg = appData.studentInfo.registration;
-        showToast('Fetching attendance data...', 'info');
-        
-        try {
-            const res = await fetch(`${ATTENDANCE_ENDPOINT}&registrationNumber=${encodeURIComponent(reg)}`);
-            const data = await res.json();
-            
-            if(!data.success) throw new Error(data.message);
-
-            const newCourses = [];
-            data.resultData.forEach(att => {
-                let exists = false;
-                Object.values(appData.semesters).forEach(s => {
-                    if(s.courses.some(c => c.code === att.CourseCode)) exists = true;
-                });
-                
-                if(!exists) {
-                    newCourses.push({
-                        code: att.CourseCode,
-                        name: att.CourseName,
-                        marks: parseFloat(att.Totalmark || 0),
-                        grade: att.Grade,
-                        semester: normalizeSemester(att.Semester)
-                    });
-                }
-            });
-
-            if(newCourses.length === 0) return showToast('No new courses found in Attendance.', 'info');
-
-            const list = document.getElementById('attendanceList');
-            list.innerHTML = newCourses.map((c, i) => `
-                <div class="form-check border-bottom py-2">
-                    <input class="form-check-input att-check" type="checkbox" value='${JSON.stringify(c)}' id="att_${i}" checked>
-                    <label class="form-check-label w-100" for="att_${i}">
-                        <div class="d-flex justify-content-between">
-                            <span class="fw-bold">${c.code}</span>
-                            <span class="badge bg-secondary">${c.semester}</span>
-                        </div>
-                        <small class="text-muted">${c.name} - Marks: ${c.marks}</small>
-                    </label>
-                </div>
-            `).join('');
-            
-            new bootstrap.Modal(document.getElementById('attendanceModal')).show();
-
-        } catch(e) {
-            showToast('Attendance fetch failed', 'error');
-        }
-    }
-
-    function importAttendanceData() {
-        const checks = document.querySelectorAll('.att-check:checked');
-        checks.forEach(chk => {
-            const c = JSON.parse(chk.value);
-            if(!appData.semesters[c.semester]) {
-                appData.semesters[c.semester] = { name: c.semester, rawName: c.semester, courses: [], order: getSemesterOrder(c.semester) };
-            }
-            const ch = 3; 
-            const qp = calculateQP(c.marks, ch, c.grade);
-            appData.semesters[c.semester].courses.push({
-                code: c.code, title: c.name,
-                creditHours: ch, marks: c.marks, grade: c.grade,
-                qualityPoints: qp, isRepeated: false, isExtra: false, isCustom: true
-            });
-        });
-        
-        appData = processRawData({ resultData: flattenAppData(appData) });
-        saveProfile(appData);
-        renderResultView();
-        bootstrap.Modal.getInstance(document.getElementById('attendanceModal')).hide();
-        showToast(`${checks.length} courses imported`, 'success');
-    }
-
-    function flattenAppData(data) {
-        const arr = [];
-        Object.values(data.semesters).forEach(s => {
-            s.courses.forEach(c => {
-                arr.push({
-                    Semester: s.name, CourseCode: c.code, CourseTitle: c.title,
-                    CreditHours: `${c.creditHours}`, Total: c.marks, Grade: c.grade
-                });
-            });
-        });
-        return arr;
-    }
-
-    // --- Profile Management ---
-    function saveProfile(data) {
-        const profiles = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
-        profiles[data.id] = data;
-        localStorage.setItem('uaf_profiles', JSON.stringify(profiles));
-        renderRecentProfiles();
-    }
-
-    function renderRecentProfiles() {
-        const profiles = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
-        const list = document.getElementById('recentProfilesList');
-        const section = document.getElementById('recentProfilesSection');
-        const ids = Object.keys(profiles);
-
-        if(ids.length === 0) {
-            section.classList.add('hidden');
-            return;
-        }
-        
-        section.classList.remove('hidden');
-        const recent = ids.slice(-2).reverse();
-        
-        list.innerHTML = recent.map(id => {
-            const p = profiles[id];
-            const stats = calculateStats(p);
-            return `
-                <div class="profile-card" onclick="loadProfile('${id}')">
-                    <div class="d-flex align-items-center">
-                        <div class="profile-avatar">${p.studentInfo.name.charAt(0)}</div>
-                        <div>
-                            <div class="fw-bold">${p.studentInfo.name}</div>
-                            <div class="small text-muted">${id}</div>
-                        </div>
-                    </div>
-                    <div class="text-end">
-                        <div class="fw-bold text-brand fs-5">${stats.cgpa.toFixed(2)}</div>
-                        <div class="small text-muted">CGPA</div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
-
-    window.loadProfile = function(id) {
-        const profiles = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
-        if(profiles[id]) {
-            appData = profiles[id];
-            switchView('result');
-            renderResultView();
-        }
-    };
-
-    function openProfileManager() {
-        const profiles = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
-        const list = document.getElementById('modalProfileList');
-        list.innerHTML = Object.keys(profiles).map(id => `
-            <div class="list-group-item d-flex justify-content-between align-items-center p-3">
-                <div>
-                    <div class="fw-bold">${profiles[id].studentInfo.name}</div>
-                    <div class="small text-muted">${id}</div>
-                </div>
-                <div>
-                    <button class="btn btn-sm btn-primary me-1" onclick="loadProfile('${id}');bootstrap.Modal.getInstance(document.getElementById('profileModal')).hide()">Load</button>
-                    <button class="btn btn-sm btn-outline-danger" onclick="deleteProfile('${id}')"><i class="fa-solid fa-trash"></i></button>
-                </div>
-            </div>
-        `).join('');
-        new bootstrap.Modal(document.getElementById('profileModal')).show();
-    }
-
-    window.deleteProfile = function(id) {
-        const profiles = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
-        delete profiles[id];
-        localStorage.setItem('uaf_profiles', JSON.stringify(profiles));
-        openProfileManager(); 
-        renderRecentProfiles(); 
-    };
-
-    // --- Drag & Drop ---
-    window.drag = function(ev, semName, idx) {
-        ev.dataTransfer.setData("text", JSON.stringify({sem: semName, idx: idx}));
-        ev.target.classList.add('dragging');
-    };
-    window.allowDrop = function(ev) { ev.preventDefault(); ev.currentTarget.classList.add('drag-over'); };
-    window.drop = function(ev, targetSem) {
-        ev.preventDefault();
-        document.querySelectorAll('.semester-body').forEach(el => el.classList.remove('drag-over'));
-        document.querySelector('.dragging')?.classList.remove('dragging');
-        
-        const data = JSON.parse(ev.dataTransfer.getData("text"));
-        if(data.sem === targetSem) return;
-
-        const course = appData.semesters[data.sem].courses.splice(data.idx, 1)[0];
-        appData.semesters[targetSem].courses.push(course);
-        
-        renderResultView();
-        saveProfile(appData);
-    };
-
-    // --- Utilities ---
-    window.openAddCourseModal = function(sem) {
-        document.getElementById('targetSemester').value = sem;
-        new bootstrap.Modal(document.getElementById('addCourseModal')).show();
-    };
-
-    function saveCustomCourse() {
-        const sem = document.getElementById('targetSemester').value;
-        const code = document.getElementById('ccCode').value.toUpperCase();
-        const marks = parseFloat(document.getElementById('ccMarks').value);
-        const ch = parseInt(document.getElementById('ccCredit').value);
-        const grade = getGradeFromMarks(marks, ch);
-        const qp = calculateQP(marks, ch, grade);
-
-        appData.semesters[sem].courses.push({
-            code, title: 'Custom Course', creditHours: ch, marks, grade,
-            qualityPoints: qp, isRepeated: false, isExtra: false, isCustom: true
-        });
-
-        saveProfile(appData);
-        renderResultView();
-        bootstrap.Modal.getInstance(document.getElementById('addCourseModal')).hide();
-    }
-
-    window.deleteSemester = function(semName) {
-        if(confirm(`Delete semester ${semName}?`)) {
-            delete appData.semesters[semName];
-            renderResultView();
-            saveProfile(appData);
-        }
-    };
-
-    function addForecastSemester() {
-        let count = 1;
-        while(appData.semesters[`Forecast ${count}`]) count++;
-        const name = `Forecast ${count}`;
-        appData.semesters[name] = { name, rawName: name, courses: [], order: `9999-${count}` };
-        renderResultView();
-    }
-
-    function toggleTheme() {
-        const html = document.documentElement;
-        const isDark = html.getAttribute('data-theme') === 'dark';
-        html.setAttribute('data-theme', isDark ? 'light' : 'dark');
-        localStorage.setItem('theme', isDark ? 'light' : 'dark');
-    }
-    
-    function initTheme() {
-        const saved = localStorage.getItem('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', saved);
-    }
-
-    function animateValue(id, start, end, duration, decimals, suffix='') {
-        if (start === end) return;
-        const range = end - start;
-        let current = start;
-        const increment = end > start ? 1 : -1;
-        const stepTime = Math.abs(Math.floor(duration / (range * 100))); // Dynamic step
-        const obj = document.getElementById(id);
-        const timer = setInterval(function() {
-            current += increment * (range / 20); // Faster steps
-            if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
-                current = end;
-                clearInterval(timer);
-            }
-            obj.innerHTML = current.toFixed(decimals) + suffix;
-        }, 50);
-    }
-
-    function showToast(msg, type) {
-        const toastEl = document.getElementById('liveToast');
-        const bg = type === 'error' ? 'bg-danger' : type === 'success' ? 'bg-success' : 'bg-primary';
-        toastEl.className = `toast align-items-center text-white border-0 shadow-lg ${bg}`;
-        document.getElementById('toastMsg').textContent = msg;
-        new bootstrap.Toast(toastEl).show();
-    }
-
-    function updateChart(semesters) {
-        const ctx = document.getElementById('gpaChart').getContext('2d');
-        if(chartInstance) chartInstance.destroy();
-        
-        const labels = [];
-        const data = [];
-        
-        semesters.forEach(s => {
-            let sQP = 0, sCH = 0;
-            s.courses.forEach(c => { if(!c.isExtra) { sQP += c.qualityPoints; sCH += c.creditHours; } });
-            if(s.courses.length) {
-                labels.push(s.name);
-                data.push(sCH ? (sQP/sCH).toFixed(2) : 0);
-            }
-        });
-
-        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const color = isDark ? '#a29bfe' : '#6c5ce7';
-
-        chartInstance = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels,
-                datasets: [{
-                    label: 'Semester GPA',
-                    data,
-                    borderColor: color,
-                    backgroundColor: isDark ? 'rgba(162, 155, 254, 0.2)' : 'rgba(108, 92, 231, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: color
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: {display: false} },
-                scales: {
-                    y: { beginAtZero: false, suggestedMin: 2.0, suggestedMax: 4.0, grid: { color: isDark?'rgba(255,255,255,0.05)':'rgba(0,0,0,0.05)' } },
-                    x: { grid: { display: false } }
-                }
-            }
-        });
-    }
-
-    function generatePDF() {
-        if(!appData) return showToast('No data available', 'warning');
-        
-        const doc = new window.jspdf.jsPDF();
-        const info = appData.studentInfo;
-        
-        // Header
-        doc.setFillColor(108, 92, 231); 
-        doc.rect(0, 0, 210, 40, 'F');
-        doc.setTextColor(255, 255, 255);
-        doc.setFontSize(22);
-        doc.text("Unofficial Transcript", 105, 18, null, null, "center");
-        doc.setFontSize(12);
-        doc.text("University of Agriculture Faisalabad", 105, 28, null, null, "center");
-
-        // Student Info
-        doc.setTextColor(0, 0, 0);
-        doc.setFontSize(12);
-        doc.text(`Name: ${info.name}`, 14, 50);
-        doc.text(`Reg No: ${info.registration}`, 14, 56);
-        
-        const stats = calculateStats(appData);
-        doc.text(`CGPA: ${stats.cgpa.toFixed(4)}`, 150, 50);
-        doc.text(`Percentage: ${stats.percentage.toFixed(2)}%`, 150, 56);
-
-        let y = 65;
-
-        // Semesters
-        const sorted = Object.values(appData.semesters).sort((a,b) => a.order.localeCompare(b.order));
-        
-        sorted.forEach(sem => {
-            const displayCourses = sem.courses.filter(c => {
-                const isBed = BED_COURSES.has(c.code);
-                if(appData.bedMode) return isBed;
-                if(appData.hasBedCourses) return !isBed;
-                return true;
-            });
-
-            if(displayCourses.length === 0) return;
-
-            if(y > 250) { doc.addPage(); y = 20; }
-
-            // Semester Header
-            doc.setFont(undefined, 'bold');
-            doc.setFillColor(240, 240, 240);
-            doc.rect(14, y, 182, 8, 'F');
-            doc.text(sem.name, 16, y+6);
-            y += 10;
-
-            const tableBody = displayCourses.map(c => [
-                c.code + (c.isRepeated ? (c.isExtra ? ' (Rep)' : ' (Imp)') : ''),
-                c.title || '-',
-                c.creditHours,
-                c.marks,
-                c.grade,
-                c.qualityPoints.toFixed(2)
-            ]);
-
-            doc.autoTable({
-                startY: y,
-                head: [['Code', 'Title', 'CH', 'Marks', 'Grd', 'QP']],
-                body: tableBody,
-                theme: 'grid',
-                styles: { fontSize: 9 },
-                headStyles: { fillColor: [100, 100, 100] },
-                margin: { left: 14, right: 14 }
-            });
-
-            y = doc.lastAutoTable.finalY + 10;
-        });
-
-        // Footer
-        const pageCount = doc.internal.getNumberOfPages();
-        for(let i = 1; i <= pageCount; i++) {
-            doc.setPage(i);
-            doc.setFontSize(8);
-            doc.text('Generated by UAF Calc - M Saqlain', 105, 290, null, null, "center");
-        }
-
-        doc.save(`Transcript_${info.registration}.pdf`);
-    }
-
-    // --- Import/Export ---
-    window.exportProfiles = function() {
-        const data = localStorage.getItem('uaf_profiles');
-        if(!data) return showToast('No profiles to export', 'warning');
-        const blob = new Blob([data], {type: 'application/json'});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'uaf_profiles_backup.json';
-        a.click();
-    };
-
-    window.importProfiles = function(input) {
-        const file = input.files[0];
-        if(!file) return;
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            try {
-                const rawData = JSON.parse(e.target.result);
-                
-                // Flexible Validation to support legacy backups
-                let validData = {};
-                let count = 0;
-
-                // Case 1: Standard Backup (Object of Profiles)
-                if (typeof rawData === 'object' && !Array.isArray(rawData)) {
-                   Object.keys(rawData).forEach(key => {
-                       const p = rawData[key];
-                       if (p && (p.studentInfo || (p.StudentName && p.RegistrationNo))) {
-                           // Attempt to normalize if legacy
-                           if(!p.studentInfo && p.StudentName) {
-                               p.studentInfo = { name: p.StudentName, registration: p.RegistrationNo };
-                               // Assume other structure exists or repair it
-                           }
-                           validData[key] = p;
-                           count++;
-                       }
-                   });
-                }
-                
-                if (count === 0) throw new Error("No recognizable profile data found");
-
-                // Merge
-                const existing = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
-                const merged = { ...existing, ...validData };
-                localStorage.setItem('uaf_profiles', JSON.stringify(merged));
-                
-                openProfileManager();
-                renderRecentProfiles();
-                showToast(`Imported ${count} profiles successfully`, 'success');
-            } catch(err) {
-                console.error(err);
-                showToast('Import Warning: Data format might be old or incompatible, but we tried our best.', 'warning');
-            }
-        };
-        reader.readAsText(file);
-    };
-
-});
-</script>
-</body>
-</html>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-8 relative w-full">
+          <div className="max-w-5xl mx-auto pb-10">
+            {activeTab === 'calculator' && (
+              <CalculatorView 
+                profile={currentProfile} 
+                updateProfile={updateProfile} 
+                settings={settings}
+              />
+            )}
+            {activeTab === 'forecast' && (
+              <ForecasterView profile={currentProfile} />
+            )}
+            {activeTab === 'profiles' && (
+              <ProfilesView 
+                profiles={profiles} 
+                currentProfileId={currentProfileId}
+                setCurrentProfileId={setCurrentProfileId}
+                addProfile={addProfile}
+                deleteProfile={deleteProfile}
+              />
+            )}
+            {activeTab === 'import' && (
+              <ImportView importData={importData} />
+            )}
+            {activeTab === 'settings' && (
+              <SettingsView settings={settings} updateSettings={setSettings} />
+            )}
+          </div>
+        </main>
+      </div>
+
+      <footer className="bg-white border-t border-gray-200 py-4 text-center text-xs text-gray-400">
+        <p>© {new Date().getFullYear()} UAF CGPA Calculator. All rights reserved.</p>
+      </footer>
+    </div>
+  );
+}
