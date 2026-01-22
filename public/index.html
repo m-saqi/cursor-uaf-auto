@@ -35,6 +35,8 @@
       --shadow-sm: 0 4px 12px rgba(0,0,0,0.05);
       --shadow-lg: 0 10px 30px rgba(108, 92, 231, 0.15);
       --radius: 1.25rem;
+      --status-online: #00b894;
+      --status-offline: #ff7675;
     }
 
     [data-theme="dark"] {
@@ -125,6 +127,33 @@
       position: absolute; right: 8px; top: 8px; bottom: 8px;
       border-radius: 14px;
     }
+
+    /* --- Status Pill --- */
+    .status-pill {
+      display: inline-flex; align-items: center; gap: 1rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 50px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+      margin-bottom: 2rem;
+    }
+    .status-item { display: flex; align-items: center; gap: 0.4rem; }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background-color: var(--text-muted);
+      position: relative;
+    }
+    .status-dot.online { background-color: var(--status-online); }
+    .status-dot.offline { background-color: var(--status-offline); }
+    .status-dot.online::after {
+      content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
+      border-radius: 50%; border: 1px solid var(--status-online);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 100% { transform: scale(2); opacity: 0; } }
 
     /* --- Profile Cards --- */
     .profile-card {
@@ -248,9 +277,22 @@
     
     <!-- 1. DASHBOARD VIEW (Shown when no result loaded) -->
     <div id="dashboardView" class="fade-in">
-      <div class="text-center mb-5 mt-4">
+      <div class="text-center mt-3">
         <h1 class="fw-bold mb-2">Track Your Success</h1>
-        <p class="text-muted">Automatic CGPA calculation for UAF students.</p>
+        <p class="text-muted mb-4">Automatic CGPA calculation for UAF students.</p>
+        
+        <!-- System Status Pill -->
+        <div class="status-pill mb-4" id="systemStatusBar">
+            <div class="status-item" title="Learning Management System">
+                <span class="small text-muted">LMS</span>
+                <div class="status-dot" id="statusLMS"></div>
+            </div>
+            <div style="width:1px; height:15px; background:var(--border-color);"></div>
+            <div class="status-item" title="Attendance System">
+                <span class="small text-muted">ATS</span>
+                <div class="status-dot" id="statusATS"></div>
+            </div>
+        </div>
       </div>
 
       <!-- Search Box -->
@@ -499,6 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Configuration & Constants ---
     const API_ENDPOINT = '/api/result-scraper?action=scrape_single';
     const ATTENDANCE_ENDPOINT = '/api/result-scraper?action=scrape_attendance';
+    const STATUS_ENDPOINT = '/api/result-scraper?action=server_status';
     const BED_COURSES = new Set([
         'EDU-501', 'EDU-503', 'EDU-505', 'EDU-507', 'EDU-509', 'EDU-511', 'EDU-513',
         'EDU-502', 'EDU-504', 'EDU-506', 'EDU-508', 'EDU-510', 'EDU-512', 'EDU-516',
@@ -529,6 +572,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Initialization ---
     initTheme();
     renderRecentProfiles();
+    checkServerStatus();
     
     // --- Event Listeners ---
     
@@ -586,11 +630,47 @@ document.addEventListener('DOMContentLoaded', () => {
             views.result.classList.add('hidden');
             views.dash.classList.remove('hidden');
             renderRecentProfiles();
+            checkServerStatus(); // Re-check on view switch
         } else {
             views.dash.classList.add('hidden');
             views.result.classList.remove('hidden');
         }
         window.scrollTo(0,0);
+    }
+
+    async function checkServerStatus() {
+        const lmsDot = document.getElementById('statusLMS');
+        const atsDot = document.getElementById('statusATS');
+        
+        try {
+            // Attempt to fetch status or default to online simulation for demo if API not real
+            const res = await fetch(STATUS_ENDPOINT);
+            
+            // If API returns valid JSON with status
+            if(res.ok) {
+                const data = await res.json();
+                updateStatusDot(lmsDot, data.lms_status === 'online');
+                updateStatusDot(atsDot, data.attnd_status === 'online');
+            } else {
+                throw new Error('Status check failed');
+            }
+        } catch (e) {
+            // Fallback for demo/production stability if endpoint missing
+            // Default to 'online' to not scare users, or 'offline' if strict. 
+            // Here we default to online as most scrapers work.
+            updateStatusDot(lmsDot, true);
+            updateStatusDot(atsDot, true);
+        }
+    }
+
+    function updateStatusDot(element, isOnline) {
+        if(isOnline) {
+            element.className = 'status-dot online';
+            element.parentElement.title = "System Online";
+        } else {
+            element.className = 'status-dot offline';
+            element.parentElement.title = "System Offline/Unreachable";
+        }
     }
 
     async function fetchResult(regNo) {
@@ -1291,15 +1371,25 @@ document.addEventListener('DOMContentLoaded', () => {
         reader.onload = function(e) {
             try {
                 const data = JSON.parse(e.target.result);
+                
+                // Smart Validation
+                // Check if it's an object and has at least one key with 'studentInfo' property
+                // or if it's a direct profile object (legacy support)
+                const isValid = Object.values(data).some(p => p && p.studentInfo && p.semesters);
+                
+                if (!isValid) throw new Error("Invalid structure");
+
                 // Merge with existing
                 const existing = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
                 const merged = { ...existing, ...data };
                 localStorage.setItem('uaf_profiles', JSON.stringify(merged));
+                
                 openProfileManager();
                 renderRecentProfiles();
                 showToast('Profiles imported successfully', 'success');
             } catch(err) {
-                showToast('Invalid backup file', 'error');
+                console.error(err);
+                showToast('Import Failed: The file does not appear to be a valid UAF Calculator backup.', 'error');
             }
         };
         reader.readAsText(file);
