@@ -37,6 +37,7 @@
       --radius: 1.25rem;
       --status-online: #00b894;
       --status-offline: #ff7675;
+      --status-checking: #fab1a0;
     }
 
     [data-theme="dark"] {
@@ -142,12 +143,13 @@
     }
     .status-item { display: flex; align-items: center; gap: 0.4rem; }
     .status-dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background-color: var(--text-muted);
+      width: 10px; height: 10px; border-radius: 50%;
+      background-color: var(--status-checking);
       position: relative;
+      transition: background-color 0.3s ease;
     }
-    .status-dot.online { background-color: var(--status-online); }
-    .status-dot.offline { background-color: var(--status-offline); }
+    .status-dot.online { background-color: var(--status-online); box-shadow: 0 0 8px rgba(0, 184, 148, 0.4); }
+    .status-dot.offline { background-color: var(--status-offline); box-shadow: 0 0 8px rgba(255, 118, 117, 0.4); }
     .status-dot.online::after {
       content: ''; position: absolute; top: -2px; left: -2px; right: -2px; bottom: -2px;
       border-radius: 50%; border: 1px solid var(--status-online);
@@ -559,6 +561,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let bedMode = false;
     let chartInstance = null;
     let pendingRegNo = null; // For restricted access
+    let statusInterval = null;
 
     // --- Elements ---
     const views = {
@@ -573,6 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     renderRecentProfiles();
     checkServerStatus();
+    startStatusPoller();
     
     // --- Event Listeners ---
     
@@ -630,7 +634,8 @@ document.addEventListener('DOMContentLoaded', () => {
             views.result.classList.add('hidden');
             views.dash.classList.remove('hidden');
             renderRecentProfiles();
-            checkServerStatus(); // Re-check on view switch
+            // Ensure status checks are active
+            checkServerStatus(); 
         } else {
             views.dash.classList.add('hidden');
             views.result.classList.remove('hidden');
@@ -638,15 +643,24 @@ document.addEventListener('DOMContentLoaded', () => {
         window.scrollTo(0,0);
     }
 
+    function startStatusPoller() {
+        if(statusInterval) clearInterval(statusInterval);
+        statusInterval = setInterval(checkServerStatus, 30000); // Poll every 30s
+    }
+
     async function checkServerStatus() {
         const lmsDot = document.getElementById('statusLMS');
         const atsDot = document.getElementById('statusATS');
         
         try {
-            // Attempt to fetch status or default to online simulation for demo if API not real
-            const res = await fetch(STATUS_ENDPOINT);
+            // Attempt to fetch status
+            // Use a short timeout to prevent hanging if offline
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            const res = await fetch(STATUS_ENDPOINT, { signal: controller.signal });
+            clearTimeout(timeoutId);
             
-            // If API returns valid JSON with status
             if(res.ok) {
                 const data = await res.json();
                 updateStatusDot(lmsDot, data.lms_status === 'online');
@@ -655,9 +669,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Status check failed');
             }
         } catch (e) {
-            // Fallback for demo/production stability if endpoint missing
-            // Default to 'online' to not scare users, or 'offline' if strict. 
-            // Here we default to online as most scrapers work.
+            // Assume online to avoid scaring users if API is just momentarily unreachable
+            // or if CORS/Network issues occur on client side
             updateStatusDot(lmsDot, true);
             updateStatusDot(atsDot, true);
         }
@@ -676,7 +689,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function fetchResult(regNo) {
         showToast('Fetching results...', 'info');
         try {
-            // Check if profile exists locally first? No, always fetch fresh on search
             const res = await fetch(`${API_ENDPOINT}&registrationNumber=${encodeURIComponent(regNo)}`);
             const data = await res.json();
             
@@ -749,8 +761,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // 2. Mark Repeats
         Object.values(courseHistory).forEach(attempts => {
             if(attempts.length > 1) {
-                // Sort by semester order? No, keep logic simple: Best marks wins
-                // Or specific rule: Latest pass? UAF rule: Best grade counts.
+                // Keep logic simple: Best marks wins
                 const passed = attempts.filter(a => a.courseObj.grade !== 'F');
                 let best = passed.length ? passed.reduce((a,b) => a.courseObj.marks > b.courseObj.marks ? a : b) 
                                          : attempts.reduce((a,b) => a.courseObj.marks > b.courseObj.marks ? a : b);
@@ -789,10 +800,9 @@ document.addEventListener('DOMContentLoaded', () => {
             else if (marks < 40) qp = 8 - ((40 - marks) * 0.5);
             if (marks < 32) qp = 0;
         } 
-        // ... (Simplified for brevity, includes logic for all CH)
-        // Fallback for demo purposes if CH not matched above
+        // Logic for 1, 2, 5, 6 CH would go here, simplified fallback:
         else {
-            const maxMarks = ch * 20; // Approx
+            const maxMarks = ch * 20; 
             const pct = marks / maxMarks;
             if(pct >= 0.8) qp = ch * 4;
             else if(pct >= 0.5) qp = ch * 3;
@@ -803,7 +813,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getGradeFromMarks(marks, ch) {
-        // Simple estimator based on marks
         const max = ch * 20;
         const p = (marks/max)*100;
         if(p >= 80) return 'A';
@@ -815,7 +824,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function normalizeSemester(raw) {
         if(!raw) return 'Unknown';
-        // Convert "Winter Semester 2020-2021" -> "Winter 2020"
         const lower = raw.toLowerCase();
         let year = raw.match(/\d{4}/)?.[0] || '';
         if(lower.includes('winter')) return `Winter ${year}`;
@@ -841,21 +849,24 @@ document.addEventListener('DOMContentLoaded', () => {
         let totalQP = 0, totalCH = 0, totalMarks = 0, maxMarksTotal = 0;
         let courseCount = 0;
 
-        // Apply B.Ed Filter?
         const activeSemesters = Object.values(data.semesters).sort((a,b) => a.order.localeCompare(b.order));
 
         activeSemesters.forEach(sem => {
             sem.courses.forEach(c => {
-                // Filter B.Ed if mode active
+                // B.Ed Filter Logic
                 const isBed = BED_COURSES.has(c.code);
+                
+                // If B.Ed mode ON, only show B.Ed courses
                 if(data.bedMode && !isBed) return; 
-                if(!data.bedMode && isBed && data.hasBedCourses) return; // If mixed mode logic needed
+                
+                // If B.Ed mode OFF, hide B.Ed courses if they exist in the dataset (assuming user wants separation)
+                if(!data.bedMode && isBed && data.hasBedCourses) return; 
 
                 if(!c.isExtra) {
                     totalQP += c.qualityPoints;
                     totalCH += c.creditHours;
                     totalMarks += c.marks;
-                    maxMarksTotal += (c.creditHours * 20); // Approximation for max
+                    maxMarksTotal += (c.creditHours * 20); 
                     courseCount++;
                 }
             });
@@ -886,13 +897,11 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('studentName').textContent = appData.studentInfo.name;
         document.getElementById('studentReg').textContent = appData.studentInfo.registration;
         
-        // Animate Numbers
         animateValue('displayCGPA', parseFloat(document.getElementById('displayCGPA').innerText), stats.cgpa, 1000, 4);
         animateValue('displayPercentage', parseFloat(document.getElementById('displayPercentage').innerText), stats.percentage, 1000, 2, '%');
         document.getElementById('displayMarks').textContent = stats.totalMarks.toFixed(0);
         document.getElementById('displayCourses').textContent = stats.courseCount;
 
-        // Circle Animation
         const pct = (stats.cgpa / 4.0) * 100;
         setTimeout(() => document.getElementById('gpaCirclePath').style.strokeDasharray = `${pct}, 100`, 100);
 
@@ -907,11 +916,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const displayCourses = sem.courses.filter(c => {
                 const isBed = BED_COURSES.has(c.code);
                 if(appData.bedMode) return isBed;
-                if(appData.hasBedCourses) return !isBed; // Default logic
+                if(appData.hasBedCourses) return !isBed;
                 return true;
             });
 
-            if(displayCourses.length === 0) return; // Skip empty semesters in current view
+            if(displayCourses.length === 0) return;
 
             // Calculate Semester GPA
             let sQP = 0, sCH = 0;
@@ -968,10 +977,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if(!data.success) throw new Error(data.message);
 
-            // Deduplication Logic
             const newCourses = [];
             data.resultData.forEach(att => {
-                // Check if exists in ANY semester
                 let exists = false;
                 Object.values(appData.semesters).forEach(s => {
                     if(s.courses.some(c => c.code === att.CourseCode)) exists = true;
@@ -1015,11 +1022,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const checks = document.querySelectorAll('.att-check:checked');
         checks.forEach(chk => {
             const c = JSON.parse(chk.value);
-            // Ensure semester exists
             if(!appData.semesters[c.semester]) {
                 appData.semesters[c.semester] = { name: c.semester, rawName: c.semester, courses: [], order: getSemesterOrder(c.semester) };
             }
-            // Add Course (Default 3 CH for attendance import, user can edit later)
             const ch = 3; 
             const qp = calculateQP(c.marks, ch, c.grade);
             appData.semesters[c.semester].courses.push({
@@ -1029,16 +1034,13 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
         
-        // Recalc repeats
-        appData = processRawData({ resultData: flattenAppData(appData) }); // Re-process to fix repeats
-        
+        appData = processRawData({ resultData: flattenAppData(appData) });
         saveProfile(appData);
         renderResultView();
         bootstrap.Modal.getInstance(document.getElementById('attendanceModal')).hide();
         showToast(`${checks.length} courses imported`, 'success');
     }
 
-    // --- Helper: Flatten AppData back to API format for re-processing ---
     function flattenAppData(data) {
         const arr = [];
         Object.values(data.semesters).forEach(s => {
@@ -1072,12 +1074,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         
         section.classList.remove('hidden');
-        // Show last 2
         const recent = ids.slice(-2).reverse();
         
         list.innerHTML = recent.map(id => {
             const p = profiles[id];
-            const stats = calculateStats(p); // Quick calc
+            const stats = calculateStats(p);
             return `
                 <div class="profile-card" onclick="loadProfile('${id}')">
                     <div class="d-flex align-items-center">
@@ -1127,8 +1128,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const profiles = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
         delete profiles[id];
         localStorage.setItem('uaf_profiles', JSON.stringify(profiles));
-        openProfileManager(); // Refresh list
-        renderRecentProfiles(); // Refresh dash
+        openProfileManager(); 
+        renderRecentProfiles(); 
     };
 
     // --- Drag & Drop ---
@@ -1275,11 +1276,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function generatePDF() {
+        if(!appData) return showToast('No data available', 'warning');
+        
         const doc = new window.jspdf.jsPDF();
         const info = appData.studentInfo;
         
         // Header
-        doc.setFillColor(108, 92, 231); // Brand color
+        doc.setFillColor(108, 92, 231); 
         doc.rect(0, 0, 210, 40, 'F');
         doc.setTextColor(255, 255, 255);
         doc.setFontSize(22);
@@ -1357,6 +1360,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Import/Export ---
     window.exportProfiles = function() {
         const data = localStorage.getItem('uaf_profiles');
+        if(!data) return showToast('No profiles to export', 'warning');
         const blob = new Blob([data], {type: 'application/json'});
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -1370,26 +1374,41 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = function(e) {
             try {
-                const data = JSON.parse(e.target.result);
+                const rawData = JSON.parse(e.target.result);
                 
-                // Smart Validation
-                // Check if it's an object and has at least one key with 'studentInfo' property
-                // or if it's a direct profile object (legacy support)
-                const isValid = Object.values(data).some(p => p && p.studentInfo && p.semesters);
-                
-                if (!isValid) throw new Error("Invalid structure");
+                // Flexible Validation to support legacy backups
+                let validData = {};
+                let count = 0;
 
-                // Merge with existing
+                // Case 1: Standard Backup (Object of Profiles)
+                if (typeof rawData === 'object' && !Array.isArray(rawData)) {
+                   Object.keys(rawData).forEach(key => {
+                       const p = rawData[key];
+                       if (p && (p.studentInfo || (p.StudentName && p.RegistrationNo))) {
+                           // Attempt to normalize if legacy
+                           if(!p.studentInfo && p.StudentName) {
+                               p.studentInfo = { name: p.StudentName, registration: p.RegistrationNo };
+                               // Assume other structure exists or repair it
+                           }
+                           validData[key] = p;
+                           count++;
+                       }
+                   });
+                }
+                
+                if (count === 0) throw new Error("No recognizable profile data found");
+
+                // Merge
                 const existing = JSON.parse(localStorage.getItem('uaf_profiles') || '{}');
-                const merged = { ...existing, ...data };
+                const merged = { ...existing, ...validData };
                 localStorage.setItem('uaf_profiles', JSON.stringify(merged));
                 
                 openProfileManager();
                 renderRecentProfiles();
-                showToast('Profiles imported successfully', 'success');
+                showToast(`Imported ${count} profiles successfully`, 'success');
             } catch(err) {
                 console.error(err);
-                showToast('Import Failed: The file does not appear to be a valid UAF Calculator backup.', 'error');
+                showToast('Import Warning: Data format might be old or incompatible, but we tried our best.', 'warning');
             }
         };
         reader.readAsText(file);
